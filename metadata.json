@@ -1,0 +1,8 @@
+{
+  "name": "Viajes Mar de Hielo — Contratos y Plantillas",
+  "description": "Gestión de contratos de viaje combinado, plantillas editables de buceo y ficha de clientes con guardado automático en la nube.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

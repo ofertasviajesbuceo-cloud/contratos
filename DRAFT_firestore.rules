@@ -1,0 +1,421 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isStr(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isNum(val, minVal, maxVal) {
+      return (val is int || val is float) && val >= minVal && val <= maxVal;
+    }
+
+    function isStringList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || val[0] is string);
+    }
+
+    function isMapList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || val[0] is map);
+    }
+
+    // --- Entity Validation Blueprints ---
+
+    function isValidAgencyProfile(data) {
+      return data.keys().hasAll([
+        'ownerId', 'commercialName', 'legalHolderName', 'cif', 'licenseNote',
+        'addressLine1', 'addressLine2', 'phone', 'email', 'iban', 'bic',
+        'bankBeneficiary', 'footerText', 'jurisdictionCity', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'commercialName', 'legalHolderName', 'cif', 'licenseNote',
+        'addressLine1', 'addressLine2', 'phone', 'email', 'iban', 'bic',
+        'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isStr(data.commercialName, 1, 120) &&
+      isStr(data.legalHolderName, 1, 120) &&
+      isStr(data.cif, 1, 32) &&
+      isStr(data.licenseNote, 1, 200) &&
+      isStr(data.addressLine1, 1, 150) &&
+      isStr(data.addressLine2, 1, 150) &&
+      isStr(data.phone, 1, 40) &&
+      isStr(data.email, 3, 120) &&
+      isStr(data.iban, 5, 64) &&
+      isStr(data.bic, 0, 32) &&
+      isStr(data.bankBeneficiary, 1, 120) &&
+      isStr(data.footerText, 1, 220) &&
+      isStr(data.jurisdictionCity, 1, 80) &&
+      (!('publicDomain' in data) || (
+        isStr(data.publicDomain, 0, 253) &&
+        data.publicDomain.matches('^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+)?$')
+      )) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidClient(data) {
+      return data.keys().hasAll([
+        'ownerId', 'fullName', 'dni', 'locality', 'email', 'phone',
+        'notes', 'defaultRepresented', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'fullName', 'dni', 'locality', 'email', 'phone',
+        'notes', 'defaultRepresented', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isStr(data.fullName, 2, 150) &&
+      isStr(data.dni, 3, 32) &&
+      isStr(data.locality, 2, 150) &&
+      isStr(data.email, 0, 120) &&
+      isStr(data.phone, 0, 40) &&
+      isStr(data.notes, 0, 500) &&
+      isStringList(data.defaultRepresented, 20) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTripTemplate(data) {
+      return data.keys().hasAll([
+        'ownerId', 'name', 'tripTitle', 'destinationLabel',
+        'defaultStartDateText', 'defaultEndDateText', 'diverPrice', 'nonDiverPrice',
+        'priceSummaryText', 'bankConceptPrefix', 'minGroupSize', 'cancellationNoticeDays',
+        'itineraryDays', 'destinationPayments', 'optionalServices',
+        'transportIncluded', 'transportSummary', 'transportCheckboxLabel',
+        'insuranceBasicLabel', 'insuranceBasicPrice',
+        'insuranceCancellationLabel', 'insuranceCancellationPrice',
+        'maeDestinationUrl', 'anexoTransportDetail', 'anexoManagementDetail',
+        'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+        'generalConditionsDate', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'name', 'tripTitle', 'destinationLabel',
+        'defaultStartDateText', 'defaultEndDateText', 'diverPrice', 'nonDiverPrice',
+        'priceSummaryText', 'bankConceptPrefix', 'minGroupSize', 'cancellationNoticeDays',
+        'itineraryDays', 'destinationPayments', 'optionalServices',
+        'transportIncluded', 'transportSummary', 'transportCheckboxLabel',
+        'insuranceBasicLabel', 'insuranceBasicPrice',
+        'insuranceCancellationLabel', 'insuranceCancellationPrice',
+        'maeDestinationUrl', 'anexoTransportDetail', 'anexoManagementDetail',
+        'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+        'generalConditionsDate', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isStr(data.name, 2, 140) &&
+      isStr(data.tripTitle, 2, 160) &&
+      isStr(data.destinationLabel, 2, 120) &&
+      isStr(data.defaultStartDateText, 2, 60) &&
+      isStr(data.defaultEndDateText, 2, 60) &&
+      isNum(data.diverPrice, 0, 100000) &&
+      isNum(data.nonDiverPrice, 0, 100000) &&
+      isStr(data.priceSummaryText, 2, 300) &&
+      isStr(data.bankConceptPrefix, 1, 40) &&
+      isNum(data.minGroupSize, 1, 500) &&
+      isNum(data.cancellationNoticeDays, 0, 365) &&
+      isMapList(data.itineraryDays, 30) &&
+      isStringList(data.destinationPayments, 15) &&
+      isMapList(data.optionalServices, 15) &&
+      data.transportIncluded is bool &&
+      isStr(data.transportSummary, 1, 300) &&
+      isStr(data.transportCheckboxLabel, 1, 250) &&
+      isStr(data.insuranceBasicLabel, 1, 500) &&
+      isNum(data.insuranceBasicPrice, 0, 10000) &&
+      isStr(data.insuranceCancellationLabel, 1, 300) &&
+      isNum(data.insuranceCancellationPrice, 0, 10000) &&
+      isStr(data.maeDestinationUrl, 1, 300) &&
+      isStr(data.anexoTransportDetail, 1, 200) &&
+      isStr(data.anexoManagementDetail, 1, 200) &&
+      isStr(data.anexoAccommodationDetail, 1, 250) &&
+      isStringList(data.anexoIncludedServices, 15) &&
+      isStringList(data.anexoHealthContacts, 10) &&
+      isStr(data.generalConditionsDate, 2, 60) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTravelContract(data) {
+      return data.keys().hasAll([
+        'ownerId', 'contractNumber', 'contractDateText', 'status',
+        'templateId', 'templateName', 'clientId', 'clientFullName', 'clientDni',
+        'clientLocality', 'representedPeople', 'tripTitle', 'startDateText',
+        'endDateText', 'diverPrice', 'nonDiverPrice', 'priceSummaryText',
+        'bankIban', 'bankBeneficiary', 'bankConcept', 'bankBic',
+        'minGroupSize', 'cancellationNoticeDays', 'clientSpecialRequest',
+        'itineraryDays', 'destinationPayments', 'optionalServices',
+        'transportIncluded', 'transportSummary', 'transportCheckboxLabel', 'transportChecked',
+        'insuranceBasicSelected', 'insuranceBasicLabel', 'insuranceBasicPrice',
+        'insuranceCancellationSelected', 'insuranceCancellationLabel', 'insuranceCancellationPrice',
+        'declineAssistanceInsurance', 'declineCancellationInsurance',
+        'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
+        'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
+        'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+        'generalConditionsDate', 'imageAuthorization', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'contractNumber', 'contractDateText', 'status',
+        'templateId', 'templateName', 'clientId', 'clientFullName', 'clientDni',
+        'clientLocality', 'representedPeople', 'tripTitle', 'startDateText',
+        'endDateText', 'diverPrice', 'nonDiverPrice', 'priceSummaryText',
+        'bankIban', 'bankBeneficiary', 'bankConcept', 'bankBic',
+        'minGroupSize', 'cancellationNoticeDays', 'clientSpecialRequest',
+        'itineraryDays', 'destinationPayments', 'optionalServices',
+        'transportIncluded', 'transportSummary', 'transportCheckboxLabel', 'transportChecked',
+        'insuranceBasicSelected', 'insuranceBasicLabel', 'insuranceBasicPrice',
+        'insuranceCancellationSelected', 'insuranceCancellationLabel', 'insuranceCancellationPrice',
+        'declineAssistanceInsurance', 'declineCancellationInsurance',
+        'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
+        'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
+        'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+        'generalConditionsDate', 'imageAuthorization', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isStr(data.contractNumber, 2, 40) &&
+      data.contractNumber.matches('^[A-Za-z0-9\\-]+$') &&
+      isStr(data.contractDateText, 2, 60) &&
+      data.status in ['draft', 'sent', 'signed', 'archived'] &&
+      isStr(data.templateId, 0, 128) &&
+      isStr(data.templateName, 0, 140) &&
+      isStr(data.clientId, 0, 128) &&
+      isStr(data.clientFullName, 2, 150) &&
+      isStr(data.clientDni, 2, 32) &&
+      isStr(data.clientLocality, 2, 150) &&
+      isStringList(data.representedPeople, 20) &&
+      isStr(data.tripTitle, 2, 160) &&
+      isStr(data.startDateText, 2, 60) &&
+      isStr(data.endDateText, 2, 60) &&
+      isNum(data.diverPrice, 0, 100000) &&
+      isNum(data.nonDiverPrice, 0, 100000) &&
+      isStr(data.priceSummaryText, 2, 300) &&
+      isStr(data.bankIban, 5, 64) &&
+      isStr(data.bankBeneficiary, 1, 120) &&
+      isStr(data.bankConcept, 1, 140) &&
+      isStr(data.bankBic, 0, 32) &&
+      isNum(data.minGroupSize, 1, 500) &&
+      isNum(data.cancellationNoticeDays, 0, 365) &&
+      isStr(data.clientSpecialRequest, 0, 600) &&
+      isMapList(data.itineraryDays, 30) &&
+      isStringList(data.destinationPayments, 15) &&
+      isMapList(data.optionalServices, 15) &&
+      data.transportIncluded is bool &&
+      isStr(data.transportSummary, 1, 300) &&
+      isStr(data.transportCheckboxLabel, 1, 250) &&
+      data.transportChecked is bool &&
+      data.insuranceBasicSelected is bool &&
+      isStr(data.insuranceBasicLabel, 1, 500) &&
+      isNum(data.insuranceBasicPrice, 0, 10000) &&
+      data.insuranceCancellationSelected is bool &&
+      isStr(data.insuranceCancellationLabel, 1, 300) &&
+      isNum(data.insuranceCancellationPrice, 0, 10000) &&
+      data.declineAssistanceInsurance is bool &&
+      data.declineCancellationInsurance is bool &&
+      isStr(data.maeDestinationUrl, 1, 300) &&
+      isMapList(data.conceptLines, 20) &&
+      isStr(data.installmentIntro, 1, 350) &&
+      isMapList(data.installmentLines, 10) &&
+      isNum(data.totalAmount, 0, 1000000) &&
+      isStr(data.anexoTransportDetail, 1, 200) &&
+      isStr(data.anexoManagementDetail, 1, 200) &&
+      isStr(data.anexoAccommodationDetail, 1, 250) &&
+      isStringList(data.anexoIncludedServices, 15) &&
+      isStringList(data.anexoHealthContacts, 10) &&
+      isStr(data.generalConditionsDate, 2, 60) &&
+      data.imageAuthorization in ['authorized', 'declined'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAccessUser(data) {
+      return data.keys().hasAll([
+        'ownerId', 'username', 'displayName', 'email',
+        'role', 'active', 'isPrimary', 'passwordHash', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'username', 'displayName', 'email',
+        'role', 'active', 'isPrimary', 'passwordHash', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isStr(data.username, 3, 40) &&
+      data.username.matches('^[a-z0-9._\\-]{3,40}$') &&
+      isStr(data.displayName, 2, 120) &&
+      isStr(data.email, 0, 120) &&
+      data.role in ['admin', 'editor', 'viewer'] &&
+      data.active is bool &&
+      data.isPrimary is bool &&
+      isStr(data.passwordHash, 10, 200) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    match /agencyProfiles/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidAgencyProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidAgencyProfile(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'commercialName', 'legalHolderName', 'cif', 'licenseNote',
+          'addressLine1', 'addressLine2', 'phone', 'email', 'iban', 'bic',
+          'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /clients/{clientId} {
+      allow get: if isValidId(clientId) && isVerified() && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+      allow create: if isValidId(clientId) &&
+        isVerified() &&
+        isValidClient(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(clientId) &&
+        isVerified() &&
+        isValidClient(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'dni', 'locality', 'email', 'phone',
+          'notes', 'defaultRepresented', 'updatedAt'
+        ]);
+      allow delete: if isValidId(clientId) && isVerified() && existing().ownerId == request.auth.uid;
+    }
+
+    match /templates/{templateId} {
+      allow get: if isValidId(templateId) && isVerified() && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+      allow create: if isValidId(templateId) &&
+        isVerified() &&
+        isValidTripTemplate(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(templateId) &&
+        isVerified() &&
+        isValidTripTemplate(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'tripTitle', 'destinationLabel',
+          'defaultStartDateText', 'defaultEndDateText', 'diverPrice', 'nonDiverPrice',
+          'priceSummaryText', 'bankConceptPrefix', 'minGroupSize', 'cancellationNoticeDays',
+          'itineraryDays', 'destinationPayments', 'optionalServices',
+          'transportIncluded', 'transportSummary', 'transportCheckboxLabel',
+          'insuranceBasicLabel', 'insuranceBasicPrice',
+          'insuranceCancellationLabel', 'insuranceCancellationPrice',
+          'maeDestinationUrl', 'anexoTransportDetail', 'anexoManagementDetail',
+          'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+          'generalConditionsDate', 'updatedAt'
+        ]);
+      allow delete: if isValidId(templateId) && isVerified() && existing().ownerId == request.auth.uid;
+    }
+
+    match /contracts/{contractId} {
+      allow get: if isValidId(contractId) && isVerified() && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+      allow create: if isValidId(contractId) &&
+        isVerified() &&
+        isValidTravelContract(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(contractId) &&
+        isVerified() &&
+        isValidTravelContract(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        existing().status != 'archived' &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: Update contract content (auto-save editing)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'contractNumber', 'contractDateText', 'status',
+            'templateId', 'templateName', 'clientId', 'clientFullName', 'clientDni',
+            'clientLocality', 'representedPeople', 'tripTitle', 'startDateText',
+            'endDateText', 'diverPrice', 'nonDiverPrice', 'priceSummaryText',
+            'bankIban', 'bankBeneficiary', 'bankConcept', 'bankBic',
+            'minGroupSize', 'cancellationNoticeDays', 'clientSpecialRequest',
+            'itineraryDays', 'destinationPayments', 'optionalServices',
+            'transportIncluded', 'transportSummary', 'transportCheckboxLabel', 'transportChecked',
+            'insuranceBasicSelected', 'insuranceBasicLabel', 'insuranceBasicPrice',
+            'insuranceCancellationSelected', 'insuranceCancellationLabel', 'insuranceCancellationPrice',
+            'declineAssistanceInsurance', 'declineCancellationInsurance',
+            'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
+            'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
+            'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
+            'generalConditionsDate', 'imageAuthorization', 'updatedAt'
+          ]) ||
+          // Action: Update workflow status only
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        );
+      allow delete: if isValidId(contractId) && isVerified() && existing().ownerId == request.auth.uid;
+    }
+
+    match /accessUsers/{accessUserId} {
+      allow get: if isValidId(accessUserId) && isVerified() && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+      allow create: if isValidId(accessUserId) &&
+        isVerified() &&
+        isValidAccessUser(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(accessUserId) &&
+        isVerified() &&
+        isValidAccessUser(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().isPrimary == existing().isPrimary &&
+        (!existing().isPrimary || (incoming().role == 'admin' && incoming().active == true)) &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'username', 'displayName', 'email', 'role', 'active', 'passwordHash', 'updatedAt'
+        ]);
+      allow delete: if isValidId(accessUserId) &&
+        isVerified() &&
+        existing().ownerId == request.auth.uid &&
+        existing().isPrimary == false;
+    }
+  }
+}

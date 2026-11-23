@@ -1,0 +1,743 @@
+{
+  "entities": {
+    "AgencyProfile": {
+      "title": "AgencyProfile",
+      "description": "Configuración legal, fiscal y bancaria de la agencia de viajes.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "commercialName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "legalHolderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "cif": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "licenseNote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "addressLine1": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "addressLine2": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "iban": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 64
+        },
+        "bic": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "bankBeneficiary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "footerText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 220
+        },
+        "jurisdictionCity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "publicDomain": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 253,
+          "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+)?$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "commercialName",
+        "legalHolderName",
+        "cif",
+        "licenseNote",
+        "addressLine1",
+        "addressLine2",
+        "phone",
+        "email",
+        "iban",
+        "bic",
+        "bankBeneficiary",
+        "footerText",
+        "jurisdictionCity",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Ficha de cliente contratante principal para contratos de viaje.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "dni": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32
+        },
+        "locality": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "email": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "defaultRepresented": {
+          "type": "array",
+          "description": "Lista habitual de representados (máximo 20)"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "fullName",
+        "dni",
+        "locality",
+        "email",
+        "phone",
+        "notes",
+        "defaultRepresented",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TripTemplate": {
+      "title": "TripTemplate",
+      "description": "Plantilla editable de viaje combinado para generar contratos rápidamente.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 140
+        },
+        "tripTitle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "destinationLabel": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "defaultStartDateText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "defaultEndDateText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "diverPrice": {
+          "type": "number"
+        },
+        "nonDiverPrice": {
+          "type": "number"
+        },
+        "priceSummaryText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 300
+        },
+        "bankConceptPrefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "minGroupSize": {
+          "type": "number"
+        },
+        "cancellationNoticeDays": {
+          "type": "number"
+        },
+        "itineraryDays": {
+          "type": "array",
+          "description": "Días de itinerario editables (máximo 30)"
+        },
+        "destinationPayments": {
+          "type": "array",
+          "description": "Pagos directos en destino (máximo 15)"
+        },
+        "optionalServices": {
+          "type": "array",
+          "description": "Servicios opcionales configurables (máximo 15)"
+        },
+        "transportIncluded": {
+          "type": "boolean"
+        },
+        "transportSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "transportCheckboxLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "insuranceBasicLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "insuranceBasicPrice": {
+          "type": "number"
+        },
+        "insuranceCancellationLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "insuranceCancellationPrice": {
+          "type": "number"
+        },
+        "maeDestinationUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "anexoTransportDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "anexoManagementDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "anexoAccommodationDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "anexoIncludedServices": {
+          "type": "array",
+          "description": "Servicios incluidos en Anexo I (máximo 15)"
+        },
+        "anexoHealthContacts": {
+          "type": "array",
+          "description": "Contactos sanitarios de Anexo I (máximo 10)"
+        },
+        "generalConditionsDate": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "tripTitle",
+        "destinationLabel",
+        "defaultStartDateText",
+        "defaultEndDateText",
+        "diverPrice",
+        "nonDiverPrice",
+        "priceSummaryText",
+        "bankConceptPrefix",
+        "minGroupSize",
+        "cancellationNoticeDays",
+        "itineraryDays",
+        "destinationPayments",
+        "optionalServices",
+        "transportIncluded",
+        "transportSummary",
+        "transportCheckboxLabel",
+        "insuranceBasicLabel",
+        "insuranceBasicPrice",
+        "insuranceCancellationLabel",
+        "insuranceCancellationPrice",
+        "maeDestinationUrl",
+        "anexoTransportDetail",
+        "anexoManagementDetail",
+        "anexoAccommodationDetail",
+        "anexoIncludedServices",
+        "anexoHealthContacts",
+        "generalConditionsDate",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TravelContract": {
+      "title": "TravelContract",
+      "description": "Contrato de viaje combinado personalizado para un cliente concreto.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "contractNumber": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "pattern": "^[A-Za-z0-9\\-]+$"
+        },
+        "contractDateText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "sent", "signed", "archived"]
+        },
+        "templateId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "templateName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 140
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "clientFullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "clientDni": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "clientLocality": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "representedPeople": {
+          "type": "array",
+          "description": "Lista de representados (máximo 20)"
+        },
+        "tripTitle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "startDateText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "endDateText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "diverPrice": {
+          "type": "number"
+        },
+        "nonDiverPrice": {
+          "type": "number"
+        },
+        "priceSummaryText": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 300
+        },
+        "bankIban": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 64
+        },
+        "bankBeneficiary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "bankConcept": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "bankBic": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "minGroupSize": {
+          "type": "number"
+        },
+        "cancellationNoticeDays": {
+          "type": "number"
+        },
+        "clientSpecialRequest": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 600
+        },
+        "itineraryDays": {
+          "type": "array",
+          "description": "Itinerario día a día (máximo 30)"
+        },
+        "destinationPayments": {
+          "type": "array",
+          "description": "Pagos directos en destino (máximo 15)"
+        },
+        "optionalServices": {
+          "type": "array",
+          "description": "Servicios opcionales marcados (máximo 15)"
+        },
+        "transportIncluded": {
+          "type": "boolean"
+        },
+        "transportSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "transportCheckboxLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "transportChecked": {
+          "type": "boolean"
+        },
+        "insuranceBasicSelected": {
+          "type": "boolean"
+        },
+        "insuranceBasicLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "insuranceBasicPrice": {
+          "type": "number"
+        },
+        "insuranceCancellationSelected": {
+          "type": "boolean"
+        },
+        "insuranceCancellationLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "insuranceCancellationPrice": {
+          "type": "number"
+        },
+        "declineAssistanceInsurance": {
+          "type": "boolean"
+        },
+        "declineCancellationInsurance": {
+          "type": "boolean"
+        },
+        "maeDestinationUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "conceptLines": {
+          "type": "array",
+          "description": "Líneas de resumen económico del Punto XIV (máximo 20)"
+        },
+        "installmentIntro": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 350
+        },
+        "installmentLines": {
+          "type": "array",
+          "description": "Plazos de pago del Punto XIV (máximo 10)"
+        },
+        "totalAmount": {
+          "type": "number"
+        },
+        "anexoTransportDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "anexoManagementDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "anexoAccommodationDetail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "anexoIncludedServices": {
+          "type": "array",
+          "description": "Servicios incluidos en Anexo I (máximo 15)"
+        },
+        "anexoHealthContacts": {
+          "type": "array",
+          "description": "Contactos sanitarios de Anexo I (máximo 10)"
+        },
+        "generalConditionsDate": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "imageAuthorization": {
+          "type": "string",
+          "enum": ["authorized", "declined"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "contractNumber",
+        "contractDateText",
+        "status",
+        "templateId",
+        "templateName",
+        "clientId",
+        "clientFullName",
+        "clientDni",
+        "clientLocality",
+        "representedPeople",
+        "tripTitle",
+        "startDateText",
+        "endDateText",
+        "diverPrice",
+        "nonDiverPrice",
+        "priceSummaryText",
+        "bankIban",
+        "bankBeneficiary",
+        "bankConcept",
+        "bankBic",
+        "minGroupSize",
+        "cancellationNoticeDays",
+        "clientSpecialRequest",
+        "itineraryDays",
+        "destinationPayments",
+        "optionalServices",
+        "transportIncluded",
+        "transportSummary",
+        "transportCheckboxLabel",
+        "transportChecked",
+        "insuranceBasicSelected",
+        "insuranceBasicLabel",
+        "insuranceBasicPrice",
+        "insuranceCancellationSelected",
+        "insuranceCancellationLabel",
+        "insuranceCancellationPrice",
+        "declineAssistanceInsurance",
+        "declineCancellationInsurance",
+        "maeDestinationUrl",
+        "conceptLines",
+        "installmentIntro",
+        "installmentLines",
+        "totalAmount",
+        "anexoTransportDetail",
+        "anexoManagementDetail",
+        "anexoAccommodationDetail",
+        "anexoIncludedServices",
+        "anexoHealthContacts",
+        "generalConditionsDate",
+        "imageAuthorization",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AccessUser": {
+      "title": "AccessUser",
+      "description": "Usuario autorizado de acceso al panel de contratos con rol y hash PBKDF2.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40,
+          "pattern": "^[a-z0-9._\\-]{3,40}$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "editor", "viewer"]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "isPrimary": {
+          "type": "boolean"
+        },
+        "passwordHash": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "username",
+        "displayName",
+        "email",
+        "role",
+        "active",
+        "isPrimary",
+        "passwordHash",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/agencyProfiles/{userId}": {
+      "schema": {
+        "$ref": "#/entities/AgencyProfile"
+      },
+      "description": "Configuración privada de la agencia perteneciente al usuario autenticado."
+    },
+    "/clients/{clientId}": {
+      "schema": {
+        "$ref": "#/entities/Client"
+      },
+      "description": "Clientes de la agencia aislados por ownerId."
+    },
+    "/templates/{templateId}": {
+      "schema": {
+        "$ref": "#/entities/TripTemplate"
+      },
+      "description": "Plantillas editables de viajes aisladas por ownerId."
+    },
+    "/contracts/{contractId}": {
+      "schema": {
+        "$ref": "#/entities/TravelContract"
+      },
+      "description": "Contratos de viaje generados para clientes, aislados por ownerId."
+    },
+    "/accessUsers/{accessUserId}": {
+      "schema": {
+        "$ref": "#/entities/AccessUser"
+      },
+      "description": "Usuarios de acceso al workspace de la agencia aislados por ownerId."
+    }
+  }
+}
