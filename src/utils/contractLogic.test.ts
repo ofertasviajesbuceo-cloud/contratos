@@ -5,16 +5,19 @@ import {
   calculateConceptTotal,
   createContractFromTemplate,
   formatEuro,
+  formatFirestoreErrorForUser,
   generateNextContractNumber,
   normalizePublicationDomain,
   normalizeUsername,
   sanitizeAccessUserPayload,
   sanitizeAgencyProfilePayload,
   sanitizeContractPayload,
+  sanitizeTemplatePayload,
   syncContractFinancialLines,
   validateAccessUserInput,
   validateClientInput,
   validateContractInput,
+  validateContractNumberInput,
   validatePublicationDomain,
 } from './contractLogic';
 import { getRolePermissions, hashPassword, verifyPassword } from './authCrypto';
@@ -266,3 +269,64 @@ test('password hashing, verification, access user validation, and RBAC permissio
   assert.equal(sanitizedUser.username, 'laura.m');
   assert.equal(sanitizedUser.role, 'editor');
 });
+
+test('createContractFromTemplate survives partial legacy data and sanitizes contractNumber', () => {
+  const partialTemplate = {
+    id: 'tpl-partial',
+    name: 'Escapada Parcial',
+    tripTitle: 'Escapada',
+    destinationLabel: 'Medas',
+    diverPrice: 400,
+    nonDiverPrice: 200,
+    priceSummaryText: '-',
+  } as unknown as TripTemplate;
+
+  const partialClient = {
+    id: 'cli-partial',
+    fullName: 'ANA PÉREZ',
+    dni: '99887766A',
+    locality: 'VALENCIA',
+  } as unknown as Client;
+
+  const contract = createContractFromTemplate({
+    id: 'ctr-partial',
+    ownerId: 'user-1',
+    template: partialTemplate,
+    client: partialClient,
+    agency: {} as AgencyProfile,
+    contractNumber: '2026/056!',
+  });
+
+  assert.equal(contract.contractNumber, '2026-056');
+  assert.deepEqual(contract.representedPeople, []);
+  assert.deepEqual(contract.itineraryDays, []);
+  assert.deepEqual(contract.destinationPayments, []);
+  assert.deepEqual(contract.optionalServices, []);
+  assert.equal(contract.totalAmount, 400);
+
+  const sanitizedContract = sanitizeContractPayload(
+    { ...contract, contractNumber: '1', priceSummaryText: '-', bankIban: '12' },
+    'user-1'
+  );
+  assert.ok(sanitizedContract.contractNumber.length >= 2);
+  assert.match(sanitizedContract.contractNumber, /^[A-Za-z0-9-]+$/);
+  assert.ok(sanitizedContract.priceSummaryText.length >= 2);
+  assert.ok(sanitizedContract.bankIban.length >= 5);
+
+  const sanitizedTemplate = sanitizeTemplatePayload(partialTemplate, 'user-1');
+  assert.ok(sanitizedTemplate.priceSummaryText.length >= 2);
+  assert.ok(sanitizedTemplate.defaultStartDateText.length >= 2);
+  assert.ok(sanitizedTemplate.generalConditionsDate.length >= 2);
+});
+
+test('validateContractNumberInput and formatFirestoreErrorForUser handle invalid inputs and cloud errors', () => {
+  assert.equal(validateContractNumberInput('C-2026-056'), null);
+  assert.ok(validateContractNumberInput('1'));
+  assert.ok(validateContractNumberInput('2026/056'));
+
+  const permJson = JSON.stringify({ error: 'Missing or insufficient permissions (permission-denied)' });
+  assert.match(formatFirestoreErrorForUser(new Error(permJson)), /permisos o validación/i);
+  assert.match(formatFirestoreErrorForUser(new Error('network unavailable')), /conexión/i);
+  assert.match(formatFirestoreErrorForUser(new Error('resource-exhausted quota')), /límite/i);
+});
+

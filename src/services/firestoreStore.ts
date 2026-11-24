@@ -22,6 +22,10 @@ import type {
   TripTemplate,
 } from '../types/contract';
 import {
+  normalizeAgencyProfile,
+  normalizeClient,
+  normalizeContract,
+  normalizeTemplate,
   sanitizeAccessUserPayload,
   sanitizeAgencyProfilePayload,
   sanitizeClientPayload,
@@ -122,15 +126,17 @@ export function subscribeAgencyProfile(
     doc(db, 'agencyProfiles', uid),
     (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.data() as AgencyProfile;
-        onData({
-          ...DEFAULT_AGENCY_PROFILE,
-          ...data,
-          id: snapshot.id,
-          publicDomain: data.publicDomain ?? DEFAULT_AGENCY_PROFILE.publicDomain,
-        });
+        const data = snapshot.data() as Partial<AgencyProfile>;
+        onData(
+          normalizeAgencyProfile({
+            ...DEFAULT_AGENCY_PROFILE,
+            ...data,
+            id: snapshot.id,
+            publicDomain: data.publicDomain ?? DEFAULT_AGENCY_PROFILE.publicDomain,
+          })
+        );
       } else {
-        onData({ ...DEFAULT_AGENCY_PROFILE, ownerId: uid });
+        onData(normalizeAgencyProfile({ ...DEFAULT_AGENCY_PROFILE, ownerId: uid }));
       }
     },
     (error) => handleFirestoreError(error, OperationType.GET, path)
@@ -146,7 +152,9 @@ export function subscribeClients(
   return onSnapshot(
     q,
     (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ ...(d.data() as Client), id: d.id }));
+      const items = snapshot.docs.map((d) =>
+        normalizeClient({ ...(d.data() as Partial<Client>), id: d.id })
+      );
       items.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
       onData(items);
     },
@@ -163,7 +171,9 @@ export function subscribeTemplates(
   return onSnapshot(
     q,
     (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ ...(d.data() as TripTemplate), id: d.id }));
+      const items = snapshot.docs.map((d) =>
+        normalizeTemplate({ ...(d.data() as Partial<TripTemplate>), id: d.id })
+      );
       items.sort((a, b) => a.name.localeCompare(b.name, 'es'));
       onData(items);
     },
@@ -180,7 +190,9 @@ export function subscribeContracts(
   return onSnapshot(
     q,
     (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ ...(d.data() as TravelContract), id: d.id }));
+      const items = snapshot.docs.map((d) =>
+        normalizeContract({ ...(d.data() as Partial<TravelContract>), id: d.id })
+      );
       items.sort((a, b) => b.contractNumber.localeCompare(a.contractNumber, 'es'));
       onData(items);
     },

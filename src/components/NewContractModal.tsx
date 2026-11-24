@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertCircle, X } from 'lucide-react';
 import type { Client, TripTemplate } from '../types/contract';
-import { formatEuro, type TravelerRole, validateClientInput } from '../utils/contractLogic';
+import {
+  formatEuro,
+  formatFirestoreErrorForUser,
+  type TravelerRole,
+  validateClientInput,
+  validateContractNumberInput,
+} from '../utils/contractLogic';
 
 interface NewContractModalProps {
   open: boolean;
@@ -17,7 +23,7 @@ interface NewContractModalProps {
     isNewClient: boolean;
     contractNumber: string;
     travelerRole: TravelerRole;
-  }) => void;
+  }) => Promise<void> | void;
 }
 
 export const NewContractModal: React.FC<NewContractModalProps> = ({
@@ -44,43 +50,95 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  React.useEffect(() => {
-    if (open) {
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
       setTemplateId(initialTemplateId || templates[0]?.id || '');
       setClientId(initialClientId || clients[0]?.id || '');
       setContractNumber(suggestedContractNumber);
-      setClientMode(clients.length > 0 ? 'existing' : 'new');
+      setClientMode(clients.length > 0 || initialClientId ? 'existing' : 'new');
+      setTravelerRole('diver');
+      setNewName('');
+      setNewDni('');
+      setNewLocality('');
+      setNewEmail('');
+      setNewPhone('');
       setErrors({});
+      setSubmitError(null);
+      setSubmitting(false);
     }
+    wasOpenRef.current = open;
   }, [open, initialTemplateId, initialClientId, templates, clients, suggestedContractNumber]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!templateId && templates.length > 0) {
+      setTemplateId(initialTemplateId || templates[0].id);
+    }
+    if (!clientId && clients.length > 0) {
+      setClientId(initialClientId || clients[0].id);
+    }
+  }, [open, templateId, clientId, templates, clients, initialTemplateId, initialClientId]);
 
   if (!open) return null;
 
   const selectedTemplate = templates.find((t) => t.id === templateId) || templates[0];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTemplate) return;
+    if (submitting) return;
+
+    setSubmitError(null);
+    const nextErrors: Record<string, string> = {};
+
+    if (!selectedTemplate) {
+      nextErrors.template = 'Debes crear o seleccionar una plantilla de viaje antes de generar un contrato.';
+    }
+
+    const finalNumber = contractNumber.trim() || suggestedContractNumber;
+    const numberErr = validateContractNumberInput(finalNumber);
+    if (numberErr) {
+      nextErrors.contractNumber = numberErr;
+    }
 
     if (clientMode === 'existing') {
       const existing = clients.find((c) => c.id === clientId);
       if (!existing) {
-        setErrors({ client: 'Selecciona un cliente o crea uno nuevo.' });
+        nextErrors.client = 'Selecciona un cliente o crea uno nuevo.';
+      }
+      if (Object.keys(nextErrors).length > 0 || !selectedTemplate || !existing) {
+        setErrors(nextErrors);
         return;
       }
-      onConfirm({
-        templateId: selectedTemplate.id,
-        client: existing,
-        isNewClient: false,
-        contractNumber: contractNumber.trim() || suggestedContractNumber,
-        travelerRole,
-      });
+      setErrors({});
+      setSubmitting(true);
+      try {
+        await onConfirm({
+          templateId: selectedTemplate.id,
+          client: existing,
+          isNewClient: false,
+          contractNumber: finalNumber,
+          travelerRole,
+        });
+      } catch (err) {
+        setSubmitError(
+          err instanceof Error && err.message
+            ? err.message
+            : formatFirestoreErrorForUser(err)
+        );
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
 
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const candidate: Client = {
-      id: `cli-${Date.now()}`,
+      id: `cli-${uniqueSuffix}`,
       ownerId: 'local-demo',
       fullName: newName.trim().toUpperCase(),
       dni: newDni.trim().toUpperCase(),
@@ -90,19 +148,32 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
       notes: '',
       defaultRepresented: [],
     };
-    const errs = validateClientInput(candidate);
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
+    const clientErrs = validateClientInput(candidate);
+    const combinedErrors = { ...nextErrors, ...clientErrs };
+    if (Object.keys(combinedErrors).length > 0 || !selectedTemplate) {
+      setErrors(combinedErrors);
       return;
     }
 
-    onConfirm({
-      templateId: selectedTemplate.id,
-      client: candidate,
-      isNewClient: true,
-      contractNumber: contractNumber.trim() || suggestedContractNumber,
-      travelerRole,
-    });
+    setErrors({});
+    setSubmitting(true);
+    try {
+      await onConfirm({
+        templateId: selectedTemplate.id,
+        client: candidate,
+        isNewClient: true,
+        contractNumber: finalNumber,
+        travelerRole,
+      });
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error && err.message
+          ? err.message
+          : formatFirestoreErrorForUser(err)
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -128,14 +199,37 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Cerrar modal de nuevo contrato"
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg disabled:opacity-50"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+          {submitError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800"
+            >
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          {templates.length === 0 && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>
+                No hay ninguna plantilla de viaje disponible. Crea primero una en el apartado «Plantillas de viaje».
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-2">
               <label htmlFor="nc-template" className="block text-xs font-medium text-slate-700 mb-1">
@@ -144,15 +238,24 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
               <select
                 id="nc-template"
                 value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                onChange={(e) => {
+                  setTemplateId(e.target.value);
+                  setErrors((prev) => ({ ...prev, template: '' }));
+                }}
+                disabled={templates.length === 0 || submitting}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white disabled:bg-slate-100"
               >
-                {templates.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                  </option>
-                ))}
+                {templates.length === 0 ? (
+                  <option value="">Sin plantillas disponibles</option>
+                ) : (
+                  templates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name}
+                    </option>
+                  ))
+                )}
               </select>
+              {errors.template && <p className="text-xs text-red-600 mt-1">{errors.template}</p>}
             </div>
             <div>
               <label htmlFor="nc-number" className="block text-xs font-medium text-slate-700 mb-1">
@@ -162,9 +265,22 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
                 id="nc-number"
                 type="text"
                 value={contractNumber}
-                onChange={(e) => setContractNumber(e.target.value)}
+                onChange={(e) => {
+                  setContractNumber(e.target.value);
+                  if (errors.contractNumber) {
+                    setErrors((prev) => {
+                      const { contractNumber: _c, ...rest } = prev;
+                      void _c;
+                      return rest;
+                    });
+                  }
+                }}
+                disabled={submitting}
                 className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg"
               />
+              {errors.contractNumber && (
+                <p className="text-xs text-red-600 mt-1">{errors.contractNumber}</p>
+              )}
             </div>
           </div>
 
@@ -330,15 +446,17 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg"
+            disabled={submitting}
+            className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="submit"
-            className="px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
+            disabled={submitting || templates.length === 0}
+            className="px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Generar y abrir contrato
+            {submitting ? 'Generando contrato...' : 'Generar y abrir contrato'}
           </button>
         </div>
       </form>

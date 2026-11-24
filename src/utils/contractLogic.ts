@@ -104,10 +104,220 @@ export function clampString(value: string, maxLen: number): string {
   return String(value ?? '').slice(0, maxLen);
 }
 
+export function ensureMinMaxString(
+  value: unknown,
+  minLen: number,
+  maxLen: number,
+  fallback: string
+): string {
+  const trimmed = String(value ?? '').trim();
+  const safeFallback = clampString(fallback, maxLen);
+  if (trimmed.length < minLen) {
+    return safeFallback;
+  }
+  return clampString(trimmed, maxLen);
+}
+
 export function clampNumber(value: number, min: number, max: number): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return min;
   return Math.min(max, Math.max(min, Math.round(num * 100) / 100));
+}
+
+export function normalizeAgencyProfile(raw: Partial<AgencyProfile> | null | undefined): AgencyProfile {
+  const src = raw ?? {};
+  return {
+    id: src.id,
+    ownerId: typeof src.ownerId === 'string' && src.ownerId ? src.ownerId : 'local-demo',
+    commercialName: typeof src.commercialName === 'string' && src.commercialName ? src.commercialName : 'VIAJES MAR DE HIELO',
+    legalHolderName: typeof src.legalHolderName === 'string' && src.legalHolderName ? src.legalHolderName : 'MARIA DEL PILAR JIMENEZ REINA',
+    cif: typeof src.cif === 'string' && src.cif ? src.cif : '15.405.540-W',
+    licenseNote: typeof src.licenseNote === 'string' && src.licenseNote ? src.licenseNote : 'Licencia de Agencia de Viajes en Cataluña',
+    addressLine1: typeof src.addressLine1 === 'string' && src.addressLine1 ? src.addressLine1 : 'Port Esportiu de Tarragona Local LD4',
+    addressLine2: typeof src.addressLine2 === 'string' && src.addressLine2 ? src.addressLine2 : '43004 – Tarragona (ESPAÑA)',
+    phone: typeof src.phone === 'string' && src.phone ? src.phone : '(+34) 644 53 36 86',
+    email: typeof src.email === 'string' && src.email ? src.email : 'Info@ofertasviajesbuceo.com',
+    iban: typeof src.iban === 'string' && src.iban ? src.iban : 'ES4300496703012116041736',
+    bic: typeof src.bic === 'string' ? src.bic : 'BSCHESMMXXX',
+    bankBeneficiary: typeof src.bankBeneficiary === 'string' && src.bankBeneficiary ? src.bankBeneficiary : 'María del Pilar Jiménez Reina.',
+    footerText: typeof src.footerText === 'string' && src.footerText ? src.footerText : 'María del Pilar Jiménez Reina – 15405540W – Licencia de Agencia de Viajes en Cataluña (España)',
+    jurisdictionCity: typeof src.jurisdictionCity === 'string' && src.jurisdictionCity ? src.jurisdictionCity : 'Tarragona',
+    publicDomain: typeof src.publicDomain === 'string' ? src.publicDomain : '',
+    createdAt: src.createdAt,
+    updatedAt: src.updatedAt,
+  };
+}
+
+export function normalizeClient(raw: Partial<Client> | null | undefined): Client {
+  const src = raw ?? {};
+  return {
+    id: typeof src.id === 'string' && src.id ? src.id : `cli-${Date.now()}`,
+    ownerId: typeof src.ownerId === 'string' && src.ownerId ? src.ownerId : 'local-demo',
+    fullName: typeof src.fullName === 'string' ? src.fullName : '',
+    dni: typeof src.dni === 'string' ? src.dni : '',
+    locality: typeof src.locality === 'string' ? src.locality : '',
+    email: typeof src.email === 'string' ? src.email : '',
+    phone: typeof src.phone === 'string' ? src.phone : '',
+    notes: typeof src.notes === 'string' ? src.notes : '',
+    defaultRepresented: Array.isArray(src.defaultRepresented)
+      ? src.defaultRepresented.filter((item): item is string => typeof item === 'string')
+      : [],
+    createdAt: src.createdAt,
+    updatedAt: src.updatedAt,
+  };
+}
+
+export function normalizeTemplate(raw: Partial<TripTemplate> | null | undefined): TripTemplate {
+  const src = raw ?? {};
+  return {
+    id: typeof src.id === 'string' && src.id ? src.id : `tpl-${Date.now()}`,
+    ownerId: typeof src.ownerId === 'string' && src.ownerId ? src.ownerId : 'local-demo',
+    name: typeof src.name === 'string' && src.name ? src.name : 'Plantilla sin nombre',
+    tripTitle: typeof src.tripTitle === 'string' && src.tripTitle ? src.tripTitle : 'Viaje combinado',
+    destinationLabel: typeof src.destinationLabel === 'string' && src.destinationLabel ? src.destinationLabel : 'Destino',
+    defaultStartDateText: typeof src.defaultStartDateText === 'string' && src.defaultStartDateText ? src.defaultStartDateText : 'Por definir',
+    defaultEndDateText: typeof src.defaultEndDateText === 'string' && src.defaultEndDateText ? src.defaultEndDateText : 'Por definir',
+    diverPrice: Number.isFinite(Number(src.diverPrice)) ? Number(src.diverPrice) : 0,
+    nonDiverPrice: Number.isFinite(Number(src.nonDiverPrice)) ? Number(src.nonDiverPrice) : 0,
+    priceSummaryText: typeof src.priceSummaryText === 'string' && src.priceSummaryText ? src.priceSummaryText : 'Según ficha técnica',
+    bankConceptPrefix: typeof src.bankConceptPrefix === 'string' && src.bankConceptPrefix ? src.bankConceptPrefix : 'VIAJE',
+    minGroupSize: Number.isFinite(Number(src.minGroupSize)) && Number(src.minGroupSize) >= 1 ? Number(src.minGroupSize) : 1,
+    cancellationNoticeDays: Number.isFinite(Number(src.cancellationNoticeDays)) && Number(src.cancellationNoticeDays) >= 0 ? Number(src.cancellationNoticeDays) : 15,
+    itineraryDays: Array.isArray(src.itineraryDays)
+      ? src.itineraryDays.map((d) => ({
+          title: typeof d?.title === 'string' ? d.title : 'Día',
+          description: typeof d?.description === 'string' ? d.description : '',
+        }))
+      : [],
+    destinationPayments: Array.isArray(src.destinationPayments)
+      ? src.destinationPayments.filter((item): item is string => typeof item === 'string')
+      : [],
+    optionalServices: Array.isArray(src.optionalServices)
+      ? src.optionalServices.map((s, idx) => ({
+          id: typeof s?.id === 'string' && s.id ? s.id : `srv-${idx + 1}`,
+          label: typeof s?.label === 'string' ? s.label : 'Servicio opcional',
+          note: typeof s?.note === 'string' ? s.note : '',
+          price: Number.isFinite(Number(s?.price)) ? Number(s.price) : 0,
+          selected: Boolean(s?.selected),
+        }))
+      : [],
+    transportIncluded: Boolean(src.transportIncluded),
+    transportSummary: typeof src.transportSummary === 'string' && src.transportSummary ? src.transportSummary : 'Según ficha técnica',
+    transportCheckboxLabel: typeof src.transportCheckboxLabel === 'string' && src.transportCheckboxLabel ? src.transportCheckboxLabel : 'El cliente conoce las condiciones de transporte.',
+    insuranceBasicLabel: typeof src.insuranceBasicLabel === 'string' && src.insuranceBasicLabel ? src.insuranceBasicLabel : 'Seguro Básico de Asistencia en Viaje',
+    insuranceBasicPrice: Number.isFinite(Number(src.insuranceBasicPrice)) ? Number(src.insuranceBasicPrice) : 0,
+    insuranceCancellationLabel: typeof src.insuranceCancellationLabel === 'string' && src.insuranceCancellationLabel ? src.insuranceCancellationLabel : 'Cobertura adicional de anulación',
+    insuranceCancellationPrice: Number.isFinite(Number(src.insuranceCancellationPrice)) ? Number(src.insuranceCancellationPrice) : 0,
+    maeDestinationUrl: typeof src.maeDestinationUrl === 'string' && src.maeDestinationUrl ? src.maeDestinationUrl : 'https://www.exteriores.gob.es',
+    anexoTransportDetail: typeof src.anexoTransportDetail === 'string' && src.anexoTransportDetail ? src.anexoTransportDetail : 'Según programa',
+    anexoManagementDetail: typeof src.anexoManagementDetail === 'string' && src.anexoManagementDetail ? src.anexoManagementDetail : 'Gestión de pagos.',
+    anexoAccommodationDetail: typeof src.anexoAccommodationDetail === 'string' && src.anexoAccommodationDetail ? src.anexoAccommodationDetail : 'Según programa',
+    anexoIncludedServices: Array.isArray(src.anexoIncludedServices)
+      ? src.anexoIncludedServices.filter((item): item is string => typeof item === 'string')
+      : [],
+    anexoHealthContacts: Array.isArray(src.anexoHealthContacts)
+      ? src.anexoHealthContacts.filter((item): item is string => typeof item === 'string')
+      : [],
+    generalConditionsDate: typeof src.generalConditionsDate === 'string' && src.generalConditionsDate ? src.generalConditionsDate : '14 de septiembre de 2026',
+    createdAt: src.createdAt,
+    updatedAt: src.updatedAt,
+  };
+}
+
+export function normalizeContract(raw: Partial<TravelContract> | null | undefined): TravelContract {
+  const src = raw ?? {};
+  const conceptLines = Array.isArray(src.conceptLines)
+    ? src.conceptLines.map((c, idx) => ({
+        id: typeof c?.id === 'string' && c.id ? c.id : `c-${idx + 1}`,
+        label: typeof c?.label === 'string' ? c.label : 'Concepto',
+        amount: Number.isFinite(Number(c?.amount)) ? Number(c.amount) : 0,
+      }))
+    : [];
+  const installmentLines = Array.isArray(src.installmentLines)
+    ? src.installmentLines.map((i, idx) => ({
+        id: typeof i?.id === 'string' && i.id ? i.id : `i-${idx + 1}`,
+        label: typeof i?.label === 'string' ? i.label : 'Plazo de pago',
+        amount: Number.isFinite(Number(i?.amount)) ? Number(i.amount) : 0,
+      }))
+    : [];
+
+  return {
+    id: typeof src.id === 'string' && src.id ? src.id : `ctr-${Date.now()}`,
+    ownerId: typeof src.ownerId === 'string' && src.ownerId ? src.ownerId : 'local-demo',
+    contractNumber: typeof src.contractNumber === 'string' && src.contractNumber ? src.contractNumber : 'C-2026-001',
+    contractDateText: typeof src.contractDateText === 'string' && src.contractDateText ? src.contractDateText : formatSpanishLongDate(),
+    status: src.status === 'sent' || src.status === 'signed' || src.status === 'archived' ? src.status : 'draft',
+    templateId: typeof src.templateId === 'string' ? src.templateId : '',
+    templateName: typeof src.templateName === 'string' ? src.templateName : '',
+    clientId: typeof src.clientId === 'string' ? src.clientId : '',
+    clientFullName: typeof src.clientFullName === 'string' && src.clientFullName ? src.clientFullName : 'Cliente',
+    clientDni: typeof src.clientDni === 'string' && src.clientDni ? src.clientDni : '00000000A',
+    clientLocality: typeof src.clientLocality === 'string' && src.clientLocality ? src.clientLocality : 'España',
+    representedPeople: Array.isArray(src.representedPeople)
+      ? src.representedPeople.filter((item): item is string => typeof item === 'string')
+      : [],
+    tripTitle: typeof src.tripTitle === 'string' && src.tripTitle ? src.tripTitle : 'Viaje combinado',
+    startDateText: typeof src.startDateText === 'string' && src.startDateText ? src.startDateText : 'Por definir',
+    endDateText: typeof src.endDateText === 'string' && src.endDateText ? src.endDateText : 'Por definir',
+    diverPrice: Number.isFinite(Number(src.diverPrice)) ? Number(src.diverPrice) : 0,
+    nonDiverPrice: Number.isFinite(Number(src.nonDiverPrice)) ? Number(src.nonDiverPrice) : 0,
+    priceSummaryText: typeof src.priceSummaryText === 'string' && src.priceSummaryText ? src.priceSummaryText : 'Según ficha técnica',
+    bankIban: typeof src.bankIban === 'string' && src.bankIban ? src.bankIban : 'ES4300496703012116041736',
+    bankBeneficiary: typeof src.bankBeneficiary === 'string' && src.bankBeneficiary ? src.bankBeneficiary : 'María del Pilar Jiménez Reina.',
+    bankConcept: typeof src.bankConcept === 'string' && src.bankConcept ? src.bankConcept : 'VIAJE',
+    bankBic: typeof src.bankBic === 'string' ? src.bankBic : '',
+    minGroupSize: Number.isFinite(Number(src.minGroupSize)) && Number(src.minGroupSize) >= 1 ? Number(src.minGroupSize) : 1,
+    cancellationNoticeDays: Number.isFinite(Number(src.cancellationNoticeDays)) && Number(src.cancellationNoticeDays) >= 0 ? Number(src.cancellationNoticeDays) : 15,
+    clientSpecialRequest: typeof src.clientSpecialRequest === 'string' ? src.clientSpecialRequest : '',
+    itineraryDays: Array.isArray(src.itineraryDays)
+      ? src.itineraryDays.map((d) => ({
+          title: typeof d?.title === 'string' ? d.title : 'Día',
+          description: typeof d?.description === 'string' ? d.description : '',
+        }))
+      : [],
+    destinationPayments: Array.isArray(src.destinationPayments)
+      ? src.destinationPayments.filter((item): item is string => typeof item === 'string')
+      : [],
+    optionalServices: Array.isArray(src.optionalServices)
+      ? src.optionalServices.map((s, idx) => ({
+          id: typeof s?.id === 'string' && s.id ? s.id : `srv-${idx + 1}`,
+          label: typeof s?.label === 'string' ? s.label : 'Servicio opcional',
+          note: typeof s?.note === 'string' ? s.note : '',
+          price: Number.isFinite(Number(s?.price)) ? Number(s.price) : 0,
+          selected: Boolean(s?.selected),
+        }))
+      : [],
+    transportIncluded: Boolean(src.transportIncluded),
+    transportSummary: typeof src.transportSummary === 'string' && src.transportSummary ? src.transportSummary : 'Según ficha técnica',
+    transportCheckboxLabel: typeof src.transportCheckboxLabel === 'string' && src.transportCheckboxLabel ? src.transportCheckboxLabel : 'El cliente conoce las condiciones de transporte.',
+    transportChecked: Boolean(src.transportChecked),
+    insuranceBasicSelected: Boolean(src.insuranceBasicSelected),
+    insuranceBasicLabel: typeof src.insuranceBasicLabel === 'string' && src.insuranceBasicLabel ? src.insuranceBasicLabel : 'Seguro Básico de Asistencia en Viaje',
+    insuranceBasicPrice: Number.isFinite(Number(src.insuranceBasicPrice)) ? Number(src.insuranceBasicPrice) : 0,
+    insuranceCancellationSelected: Boolean(src.insuranceCancellationSelected),
+    insuranceCancellationLabel: typeof src.insuranceCancellationLabel === 'string' && src.insuranceCancellationLabel ? src.insuranceCancellationLabel : 'Cobertura adicional de anulación',
+    insuranceCancellationPrice: Number.isFinite(Number(src.insuranceCancellationPrice)) ? Number(src.insuranceCancellationPrice) : 0,
+    declineAssistanceInsurance: src.declineAssistanceInsurance !== undefined ? Boolean(src.declineAssistanceInsurance) : !src.insuranceBasicSelected,
+    declineCancellationInsurance: src.declineCancellationInsurance !== undefined ? Boolean(src.declineCancellationInsurance) : !src.insuranceCancellationSelected,
+    maeDestinationUrl: typeof src.maeDestinationUrl === 'string' && src.maeDestinationUrl ? src.maeDestinationUrl : 'https://www.exteriores.gob.es',
+    conceptLines,
+    installmentIntro: typeof src.installmentIntro === 'string' && src.installmentIntro ? src.installmentIntro : 'Reserva y pago inicial según contrato.',
+    installmentLines,
+    totalAmount: Number.isFinite(Number(src.totalAmount)) ? Number(src.totalAmount) : calculateConceptTotal(conceptLines),
+    anexoTransportDetail: typeof src.anexoTransportDetail === 'string' && src.anexoTransportDetail ? src.anexoTransportDetail : 'Según programa',
+    anexoManagementDetail: typeof src.anexoManagementDetail === 'string' && src.anexoManagementDetail ? src.anexoManagementDetail : 'Gestión de pagos.',
+    anexoAccommodationDetail: typeof src.anexoAccommodationDetail === 'string' && src.anexoAccommodationDetail ? src.anexoAccommodationDetail : 'Según programa',
+    anexoIncludedServices: Array.isArray(src.anexoIncludedServices)
+      ? src.anexoIncludedServices.filter((item): item is string => typeof item === 'string')
+      : [],
+    anexoHealthContacts: Array.isArray(src.anexoHealthContacts)
+      ? src.anexoHealthContacts.filter((item): item is string => typeof item === 'string')
+      : [],
+    generalConditionsDate: typeof src.generalConditionsDate === 'string' && src.generalConditionsDate ? src.generalConditionsDate : '14 de septiembre de 2026',
+    imageAuthorization: src.imageAuthorization === 'declined' ? 'declined' : 'authorized',
+    createdAt: src.createdAt,
+    updatedAt: src.updatedAt,
+  };
 }
 
 export function calculateConceptTotal(conceptLines: ConceptLine[]): number {
@@ -218,6 +428,17 @@ export function generateNextContractNumber(
 
 export type TravelerRole = 'diver' | 'non-diver';
 
+export function sanitizeContractNumberValue(raw: string): string {
+  const cleaned = String(raw ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (cleaned.length < 2 || !BLUEPRINT_LIMITS.contractNumberPattern.test(cleaned)) {
+    return 'C-2026-001';
+  }
+  return clampString(cleaned, BLUEPRINT_LIMITS.maxStr.contractNumber);
+}
+
 export function createContractFromTemplate(params: {
   id: string;
   ownerId: string;
@@ -231,13 +452,13 @@ export function createContractFromTemplate(params: {
   const {
     id,
     ownerId,
-    template,
-    client,
-    agency,
-    contractNumber,
     contractDateText = formatSpanishLongDate(),
     travelerRole = 'diver',
   } = params;
+  const template = normalizeTemplate(params.template);
+  const client = normalizeClient(params.client);
+  const agency = normalizeAgencyProfile(params.agency);
+  const contractNumber = sanitizeContractNumberValue(params.contractNumber);
 
   const diverAmount = travelerRole === 'diver' ? template.diverPrice : 0;
   const nonDiverAmount = travelerRole === 'non-diver' ? template.nonDiverPrice : 0;
@@ -384,12 +605,21 @@ export function validateTemplateInput(template: Pick<TripTemplate, 'name' | 'tri
   return errors;
 }
 
+export function validateContractNumberInput(contractNumber: string): string | null {
+  const trimmed = contractNumber.trim();
+  if (trimmed.length < 2 || trimmed.length > BLUEPRINT_LIMITS.maxStr.contractNumber || !BLUEPRINT_LIMITS.contractNumberPattern.test(trimmed)) {
+    return 'Usa al menos 2 caracteres con letras, números y guiones (ej. C-2026-056).';
+  }
+  return null;
+}
+
 export function validateContractInput(
   contract: Pick<TravelContract, 'contractNumber' | 'clientFullName' | 'clientDni' | 'clientLocality' | 'tripTitle' | 'bankIban'>
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (!BLUEPRINT_LIMITS.contractNumberPattern.test(contract.contractNumber.trim()) || contract.contractNumber.trim().length < 2) {
-    errors.contractNumber = 'Usa solo letras, números y guiones (ej. C-2026-055).';
+  const numberErr = validateContractNumberInput(contract.contractNumber);
+  if (numberErr) {
+    errors.contractNumber = numberErr;
   }
   if (contract.clientFullName.trim().length < 2) {
     errors.clientFullName = 'El nombre del contratante principal es obligatorio.';
@@ -407,6 +637,30 @@ export function validateContractInput(
     errors.bankIban = 'El IBAN bancario es obligatorio.';
   }
   return errors;
+}
+
+export function formatFirestoreErrorForUser(error: unknown): string {
+  let rawMessage = error instanceof Error ? error.message : String(error ?? '');
+  try {
+    const parsed = JSON.parse(rawMessage) as { error?: string };
+    if (parsed && typeof parsed.error === 'string') {
+      rawMessage = parsed.error;
+    }
+  } catch {
+    // Plain error string
+  }
+
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('permission-denied') || lower.includes('insufficient permissions')) {
+    return 'No se pudo guardar en la base de datos por permisos o validación de campos. Revisa que tu cuenta de Google tenga correo verificado y que todos los datos obligatorios estén completos.';
+  }
+  if (lower.includes('quota') || lower.includes('resource-exhausted')) {
+    return 'Se ha alcanzado el límite diario de operaciones de Firestore. Inténtalo de nuevo más tarde.';
+  }
+  if (lower.includes('offline') || lower.includes('unavailable') || lower.includes('network')) {
+    return 'No hay conexión con la base de datos en la nube en este momento. Verifica tu conexión e inténtalo de nuevo.';
+  }
+  return 'No se pudo guardar el contrato en la base de datos. Revisa los datos e inténtalo de nuevo.';
 }
 
 function sanitizeItinerary(days: ItineraryDay[]): ItineraryDay[] {
@@ -463,42 +717,46 @@ export function buildCanonicalUrl(domain: string | undefined, fallbackOrigin = '
 }
 
 export function sanitizeAgencyProfilePayload(profile: AgencyProfile, ownerId: string) {
-  const normalizedDomain = normalizePublicationDomain(profile.publicDomain ?? '');
+  const normalized = normalizeAgencyProfile(profile);
+  const normalizedDomain = normalizePublicationDomain(normalized.publicDomain ?? '');
   const safeDomain =
     normalizedDomain && !validatePublicationDomain(normalizedDomain) ? normalizedDomain : '';
 
   return {
-    ownerId: clampString(ownerId, BLUEPRINT_LIMITS.maxStr.ownerId),
-    commercialName: clampString(profile.commercialName || 'VIAJES MAR DE HIELO', 120),
-    legalHolderName: clampString(profile.legalHolderName || 'MARIA DEL PILAR JIMENEZ REINA', 120),
-    cif: clampString(profile.cif || '15.405.540-W', 32),
-    licenseNote: clampString(profile.licenseNote || 'Licencia de Agencia de Viajes en Cataluña', 200),
-    addressLine1: clampString(profile.addressLine1 || 'Port Esportiu de Tarragona Local LD4', 150),
-    addressLine2: clampString(profile.addressLine2 || '43004 – Tarragona (ESPAÑA)', 150),
-    phone: clampString(profile.phone || '(+34) 644 53 36 86', 40),
-    email: clampString(profile.email || 'Info@ofertasviajesbuceo.com', 120),
-    iban: clampString(profile.iban || 'ES4300496703012116041736', 64),
-    bic: clampString(profile.bic || 'BSCHESMMXXX', 32),
-    bankBeneficiary: clampString(profile.bankBeneficiary || 'María del Pilar Jiménez Reina', 120),
-    footerText: clampString(
-      profile.footerText || 'María del Pilar Jiménez Reina – 15405540W – Licencia de Agencia de Viajes en Cataluña (España)',
-      220
+    ownerId: ensureMinMaxString(ownerId, 1, BLUEPRINT_LIMITS.maxStr.ownerId, 'local-demo'),
+    commercialName: ensureMinMaxString(normalized.commercialName, 1, 120, 'VIAJES MAR DE HIELO'),
+    legalHolderName: ensureMinMaxString(normalized.legalHolderName, 1, 120, 'MARIA DEL PILAR JIMENEZ REINA'),
+    cif: ensureMinMaxString(normalized.cif, 1, 32, '15.405.540-W'),
+    licenseNote: ensureMinMaxString(normalized.licenseNote, 1, 200, 'Licencia de Agencia de Viajes en Cataluña'),
+    addressLine1: ensureMinMaxString(normalized.addressLine1, 1, 150, 'Port Esportiu de Tarragona Local LD4'),
+    addressLine2: ensureMinMaxString(normalized.addressLine2, 1, 150, '43004 – Tarragona (ESPAÑA)'),
+    phone: ensureMinMaxString(normalized.phone, 1, 40, '(+34) 644 53 36 86'),
+    email: ensureMinMaxString(normalized.email, 3, 120, 'Info@ofertasviajesbuceo.com'),
+    iban: ensureMinMaxString(normalized.iban, 5, 64, 'ES4300496703012116041736'),
+    bic: clampString(normalized.bic, 32),
+    bankBeneficiary: ensureMinMaxString(normalized.bankBeneficiary, 1, 120, 'María del Pilar Jiménez Reina.'),
+    footerText: ensureMinMaxString(
+      normalized.footerText,
+      1,
+      220,
+      'María del Pilar Jiménez Reina – 15405540W – Licencia de Agencia de Viajes en Cataluña (España)'
     ),
-    jurisdictionCity: clampString(profile.jurisdictionCity || 'Tarragona', 80),
+    jurisdictionCity: ensureMinMaxString(normalized.jurisdictionCity, 1, 80, 'Tarragona'),
     publicDomain: clampString(safeDomain, BLUEPRINT_LIMITS.maxStr.publicDomain),
   };
 }
 
 export function sanitizeClientPayload(client: Client, ownerId: string) {
+  const normalized = normalizeClient(client);
   return {
-    ownerId: clampString(ownerId, BLUEPRINT_LIMITS.maxStr.ownerId),
-    fullName: clampString(client.fullName.trim(), BLUEPRINT_LIMITS.maxStr.fullName),
-    dni: clampString(client.dni.trim(), BLUEPRINT_LIMITS.maxStr.dni),
-    locality: clampString(client.locality.trim(), BLUEPRINT_LIMITS.maxStr.locality),
-    email: clampString(client.email.trim(), BLUEPRINT_LIMITS.maxStr.email),
-    phone: clampString(client.phone.trim(), BLUEPRINT_LIMITS.maxStr.phone),
-    notes: clampString(client.notes.trim(), BLUEPRINT_LIMITS.maxStr.notes),
-    defaultRepresented: sanitizeStringArray(client.defaultRepresented, BLUEPRINT_LIMITS.maxArrayRepresented, 150),
+    ownerId: ensureMinMaxString(ownerId, 1, BLUEPRINT_LIMITS.maxStr.ownerId, 'local-demo'),
+    fullName: ensureMinMaxString(normalized.fullName, 2, BLUEPRINT_LIMITS.maxStr.fullName, 'Cliente'),
+    dni: ensureMinMaxString(normalized.dni, 3, BLUEPRINT_LIMITS.maxStr.dni, '00000000A'),
+    locality: ensureMinMaxString(normalized.locality, 2, BLUEPRINT_LIMITS.maxStr.locality, 'España'),
+    email: clampString(normalized.email.trim(), BLUEPRINT_LIMITS.maxStr.email),
+    phone: clampString(normalized.phone.trim(), BLUEPRINT_LIMITS.maxStr.phone),
+    notes: clampString(normalized.notes.trim(), BLUEPRINT_LIMITS.maxStr.notes),
+    defaultRepresented: sanitizeStringArray(normalized.defaultRepresented, BLUEPRINT_LIMITS.maxArrayRepresented, 150),
   };
 }
 
@@ -570,108 +828,107 @@ export function sanitizeAccessUserPayload(accessUser: AccessUser, ownerId: strin
 }
 
 export function sanitizeTemplatePayload(template: TripTemplate, ownerId: string) {
+  const normalized = normalizeTemplate(template);
   return {
-    ownerId: clampString(ownerId, BLUEPRINT_LIMITS.maxStr.ownerId),
-    name: clampString(template.name.trim() || 'Plantilla sin nombre', BLUEPRINT_LIMITS.maxStr.templateName),
-    tripTitle: clampString(template.tripTitle.trim() || 'Viaje combinado', BLUEPRINT_LIMITS.maxStr.tripTitle),
-    destinationLabel: clampString(template.destinationLabel.trim() || 'Destino', BLUEPRINT_LIMITS.maxStr.destinationLabel),
-    defaultStartDateText: clampString(template.defaultStartDateText.trim() || 'Por definir', BLUEPRINT_LIMITS.maxStr.dateText),
-    defaultEndDateText: clampString(template.defaultEndDateText.trim() || 'Por definir', BLUEPRINT_LIMITS.maxStr.dateText),
-    diverPrice: clampNumber(template.diverPrice, 0, 100000),
-    nonDiverPrice: clampNumber(template.nonDiverPrice, 0, 100000),
-    priceSummaryText: clampString(template.priceSummaryText.trim() || '-', BLUEPRINT_LIMITS.maxStr.priceSummaryText),
-    bankConceptPrefix: clampString(template.bankConceptPrefix.trim() || 'VIAJE', BLUEPRINT_LIMITS.maxStr.bankConceptPrefix),
-    minGroupSize: clampNumber(template.minGroupSize, 1, 500),
-    cancellationNoticeDays: clampNumber(template.cancellationNoticeDays, 0, 365),
-    itineraryDays: sanitizeItinerary(template.itineraryDays),
-    destinationPayments: sanitizeStringArray(template.destinationPayments, BLUEPRINT_LIMITS.maxArrayPayments, 200),
-    optionalServices: sanitizeOptionalServices(template.optionalServices),
-    transportIncluded: Boolean(template.transportIncluded),
-    transportSummary: clampString(template.transportSummary.trim() || '-', BLUEPRINT_LIMITS.maxStr.transportSummary),
-    transportCheckboxLabel: clampString(template.transportCheckboxLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.transportCheckbox),
-    insuranceBasicLabel: clampString(template.insuranceBasicLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel),
-    insuranceBasicPrice: clampNumber(template.insuranceBasicPrice, 0, 10000),
-    insuranceCancellationLabel: clampString(template.insuranceCancellationLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel),
-    insuranceCancellationPrice: clampNumber(template.insuranceCancellationPrice, 0, 10000),
-    maeDestinationUrl: clampString(template.maeDestinationUrl.trim() || 'https://www.exteriores.gob.es', BLUEPRINT_LIMITS.maxStr.maeUrl),
-    anexoTransportDetail: clampString(template.anexoTransportDetail.trim() || '-', BLUEPRINT_LIMITS.maxStr.anexoTransport),
-    anexoManagementDetail: clampString(template.anexoManagementDetail.trim() || 'Gestión de pagos.', BLUEPRINT_LIMITS.maxStr.anexoManagement),
-    anexoAccommodationDetail: clampString(template.anexoAccommodationDetail.trim() || '-', BLUEPRINT_LIMITS.maxStr.anexoAccommodation),
-    anexoIncludedServices: sanitizeStringArray(template.anexoIncludedServices, BLUEPRINT_LIMITS.maxArrayServices, 200),
-    anexoHealthContacts: sanitizeStringArray(template.anexoHealthContacts, BLUEPRINT_LIMITS.maxArrayHealth, 250),
-    generalConditionsDate: clampString(template.generalConditionsDate.trim() || '14 de septiembre de 2026', BLUEPRINT_LIMITS.maxStr.dateText),
+    ownerId: ensureMinMaxString(ownerId, 1, BLUEPRINT_LIMITS.maxStr.ownerId, 'local-demo'),
+    name: ensureMinMaxString(normalized.name, 2, BLUEPRINT_LIMITS.maxStr.templateName, 'Plantilla sin nombre'),
+    tripTitle: ensureMinMaxString(normalized.tripTitle, 2, BLUEPRINT_LIMITS.maxStr.tripTitle, 'Viaje combinado'),
+    destinationLabel: ensureMinMaxString(normalized.destinationLabel, 2, BLUEPRINT_LIMITS.maxStr.destinationLabel, 'Destino'),
+    defaultStartDateText: ensureMinMaxString(normalized.defaultStartDateText, 2, BLUEPRINT_LIMITS.maxStr.dateText, 'Por definir'),
+    defaultEndDateText: ensureMinMaxString(normalized.defaultEndDateText, 2, BLUEPRINT_LIMITS.maxStr.dateText, 'Por definir'),
+    diverPrice: clampNumber(normalized.diverPrice, 0, 100000),
+    nonDiverPrice: clampNumber(normalized.nonDiverPrice, 0, 100000),
+    priceSummaryText: ensureMinMaxString(normalized.priceSummaryText, 2, BLUEPRINT_LIMITS.maxStr.priceSummaryText, 'Según ficha técnica'),
+    bankConceptPrefix: ensureMinMaxString(normalized.bankConceptPrefix, 1, BLUEPRINT_LIMITS.maxStr.bankConceptPrefix, 'VIAJE'),
+    minGroupSize: clampNumber(normalized.minGroupSize, 1, 500),
+    cancellationNoticeDays: clampNumber(normalized.cancellationNoticeDays, 0, 365),
+    itineraryDays: sanitizeItinerary(normalized.itineraryDays),
+    destinationPayments: sanitizeStringArray(normalized.destinationPayments, BLUEPRINT_LIMITS.maxArrayPayments, 200),
+    optionalServices: sanitizeOptionalServices(normalized.optionalServices),
+    transportIncluded: Boolean(normalized.transportIncluded),
+    transportSummary: ensureMinMaxString(normalized.transportSummary, 1, BLUEPRINT_LIMITS.maxStr.transportSummary, 'Según ficha técnica'),
+    transportCheckboxLabel: ensureMinMaxString(normalized.transportCheckboxLabel, 1, BLUEPRINT_LIMITS.maxStr.transportCheckbox, 'El cliente conoce las condiciones de transporte.'),
+    insuranceBasicLabel: ensureMinMaxString(normalized.insuranceBasicLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel, 'Seguro Básico de Asistencia en Viaje'),
+    insuranceBasicPrice: clampNumber(normalized.insuranceBasicPrice, 0, 10000),
+    insuranceCancellationLabel: ensureMinMaxString(normalized.insuranceCancellationLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel, 'Cobertura adicional de anulación'),
+    insuranceCancellationPrice: clampNumber(normalized.insuranceCancellationPrice, 0, 10000),
+    maeDestinationUrl: ensureMinMaxString(normalized.maeDestinationUrl, 1, BLUEPRINT_LIMITS.maxStr.maeUrl, 'https://www.exteriores.gob.es'),
+    anexoTransportDetail: ensureMinMaxString(normalized.anexoTransportDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoTransport, 'Según programa'),
+    anexoManagementDetail: ensureMinMaxString(normalized.anexoManagementDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoManagement, 'Gestión de pagos.'),
+    anexoAccommodationDetail: ensureMinMaxString(normalized.anexoAccommodationDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoAccommodation, 'Según programa'),
+    anexoIncludedServices: sanitizeStringArray(normalized.anexoIncludedServices, BLUEPRINT_LIMITS.maxArrayServices, 200),
+    anexoHealthContacts: sanitizeStringArray(normalized.anexoHealthContacts, BLUEPRINT_LIMITS.maxArrayHealth, 250),
+    generalConditionsDate: ensureMinMaxString(normalized.generalConditionsDate, 2, BLUEPRINT_LIMITS.maxStr.dateText, '14 de septiembre de 2026'),
   };
 }
 
 export function sanitizeContractPayload(contract: TravelContract, ownerId: string) {
-  const conceptLines = contract.conceptLines.slice(0, BLUEPRINT_LIMITS.maxArrayConcepts).map((c) => ({
+  const normalized = normalizeContract(contract);
+  const conceptLines = normalized.conceptLines.slice(0, BLUEPRINT_LIMITS.maxArrayConcepts).map((c) => ({
     id: clampString(c.id || 'c', 64),
     label: clampString(c.label, 180),
     amount: clampNumber(c.amount, 0, 1000000),
   }));
 
-  const installmentLines = contract.installmentLines.slice(0, BLUEPRINT_LIMITS.maxArrayInstallments).map((i) => ({
+  const installmentLines = normalized.installmentLines.slice(0, BLUEPRINT_LIMITS.maxArrayInstallments).map((i) => ({
     id: clampString(i.id || 'i', 64),
     label: clampString(i.label, 180),
     amount: clampNumber(i.amount, 0, 1000000),
   }));
 
-  const cleanContractNumber = clampString(
-    contract.contractNumber.trim().replace(/[^A-Za-z0-9-]/g, '-') || 'C-2026-001',
-    BLUEPRINT_LIMITS.maxStr.contractNumber
-  );
+  const cleanContractNumber = sanitizeContractNumberValue(normalized.contractNumber);
 
   return {
-    ownerId: clampString(ownerId, BLUEPRINT_LIMITS.maxStr.ownerId),
+    ownerId: ensureMinMaxString(ownerId, 1, BLUEPRINT_LIMITS.maxStr.ownerId, 'local-demo'),
     contractNumber: cleanContractNumber,
-    contractDateText: clampString(contract.contractDateText.trim() || formatSpanishLongDate(), BLUEPRINT_LIMITS.maxStr.dateText),
-    status: contract.status,
-    templateId: clampString(contract.templateId, 128),
-    templateName: clampString(contract.templateName, BLUEPRINT_LIMITS.maxStr.templateName),
-    clientId: clampString(contract.clientId, 128),
-    clientFullName: clampString(contract.clientFullName.trim() || 'Cliente', BLUEPRINT_LIMITS.maxStr.fullName),
-    clientDni: clampString(contract.clientDni.trim() || '00000000A', BLUEPRINT_LIMITS.maxStr.dni),
-    clientLocality: clampString(contract.clientLocality.trim() || 'España', BLUEPRINT_LIMITS.maxStr.locality),
-    representedPeople: sanitizeStringArray(contract.representedPeople, BLUEPRINT_LIMITS.maxArrayRepresented, 150),
-    tripTitle: clampString(contract.tripTitle.trim() || 'Viaje combinado', BLUEPRINT_LIMITS.maxStr.tripTitle),
-    startDateText: clampString(contract.startDateText.trim() || 'Por definir', BLUEPRINT_LIMITS.maxStr.dateText),
-    endDateText: clampString(contract.endDateText.trim() || 'Por definir', BLUEPRINT_LIMITS.maxStr.dateText),
-    diverPrice: clampNumber(contract.diverPrice, 0, 100000),
-    nonDiverPrice: clampNumber(contract.nonDiverPrice, 0, 100000),
-    priceSummaryText: clampString(contract.priceSummaryText.trim() || '-', BLUEPRINT_LIMITS.maxStr.priceSummaryText),
-    bankIban: clampString(contract.bankIban.trim() || 'ES4300496703012116041736', BLUEPRINT_LIMITS.maxStr.iban),
-    bankBeneficiary: clampString(contract.bankBeneficiary.trim() || 'María del Pilar Jiménez Reina', BLUEPRINT_LIMITS.maxStr.beneficiary),
-    bankConcept: clampString(contract.bankConcept.trim() || 'VIAJE', BLUEPRINT_LIMITS.maxStr.bankConcept),
-    bankBic: clampString(contract.bankBic.trim(), BLUEPRINT_LIMITS.maxStr.bic),
-    minGroupSize: clampNumber(contract.minGroupSize, 1, 500),
-    cancellationNoticeDays: clampNumber(contract.cancellationNoticeDays, 0, 365),
-    clientSpecialRequest: clampString(contract.clientSpecialRequest.trim(), BLUEPRINT_LIMITS.maxStr.specialRequest),
-    itineraryDays: sanitizeItinerary(contract.itineraryDays),
-    destinationPayments: sanitizeStringArray(contract.destinationPayments, BLUEPRINT_LIMITS.maxArrayPayments, 200),
-    optionalServices: sanitizeOptionalServices(contract.optionalServices),
-    transportIncluded: Boolean(contract.transportIncluded),
-    transportSummary: clampString(contract.transportSummary.trim() || '-', BLUEPRINT_LIMITS.maxStr.transportSummary),
-    transportCheckboxLabel: clampString(contract.transportCheckboxLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.transportCheckbox),
-    transportChecked: Boolean(contract.transportChecked),
-    insuranceBasicSelected: Boolean(contract.insuranceBasicSelected),
-    insuranceBasicLabel: clampString(contract.insuranceBasicLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel),
-    insuranceBasicPrice: clampNumber(contract.insuranceBasicPrice, 0, 10000),
-    insuranceCancellationSelected: Boolean(contract.insuranceCancellationSelected),
-    insuranceCancellationLabel: clampString(contract.insuranceCancellationLabel.trim() || '-', BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel),
-    insuranceCancellationPrice: clampNumber(contract.insuranceCancellationPrice, 0, 10000),
-    declineAssistanceInsurance: Boolean(contract.declineAssistanceInsurance),
-    declineCancellationInsurance: Boolean(contract.declineCancellationInsurance),
-    maeDestinationUrl: clampString(contract.maeDestinationUrl.trim() || 'https://www.exteriores.gob.es', BLUEPRINT_LIMITS.maxStr.maeUrl),
+    contractDateText: ensureMinMaxString(normalized.contractDateText, 2, BLUEPRINT_LIMITS.maxStr.dateText, formatSpanishLongDate()),
+    status: normalized.status,
+    templateId: clampString(normalized.templateId, 128),
+    templateName: clampString(normalized.templateName, BLUEPRINT_LIMITS.maxStr.templateName),
+    clientId: clampString(normalized.clientId, 128),
+    clientFullName: ensureMinMaxString(normalized.clientFullName, 2, BLUEPRINT_LIMITS.maxStr.fullName, 'Cliente'),
+    clientDni: ensureMinMaxString(normalized.clientDni, 2, BLUEPRINT_LIMITS.maxStr.dni, '00000000A'),
+    clientLocality: ensureMinMaxString(normalized.clientLocality, 2, BLUEPRINT_LIMITS.maxStr.locality, 'España'),
+    representedPeople: sanitizeStringArray(normalized.representedPeople, BLUEPRINT_LIMITS.maxArrayRepresented, 150),
+    tripTitle: ensureMinMaxString(normalized.tripTitle, 2, BLUEPRINT_LIMITS.maxStr.tripTitle, 'Viaje combinado'),
+    startDateText: ensureMinMaxString(normalized.startDateText, 2, BLUEPRINT_LIMITS.maxStr.dateText, 'Por definir'),
+    endDateText: ensureMinMaxString(normalized.endDateText, 2, BLUEPRINT_LIMITS.maxStr.dateText, 'Por definir'),
+    diverPrice: clampNumber(normalized.diverPrice, 0, 100000),
+    nonDiverPrice: clampNumber(normalized.nonDiverPrice, 0, 100000),
+    priceSummaryText: ensureMinMaxString(normalized.priceSummaryText, 2, BLUEPRINT_LIMITS.maxStr.priceSummaryText, 'Según ficha técnica'),
+    bankIban: ensureMinMaxString(normalized.bankIban, 5, BLUEPRINT_LIMITS.maxStr.iban, 'ES4300496703012116041736'),
+    bankBeneficiary: ensureMinMaxString(normalized.bankBeneficiary, 1, BLUEPRINT_LIMITS.maxStr.beneficiary, 'María del Pilar Jiménez Reina.'),
+    bankConcept: ensureMinMaxString(normalized.bankConcept, 1, BLUEPRINT_LIMITS.maxStr.bankConcept, 'VIAJE'),
+    bankBic: clampString(normalized.bankBic.trim(), BLUEPRINT_LIMITS.maxStr.bic),
+    minGroupSize: clampNumber(normalized.minGroupSize, 1, 500),
+    cancellationNoticeDays: clampNumber(normalized.cancellationNoticeDays, 0, 365),
+    clientSpecialRequest: clampString(normalized.clientSpecialRequest.trim(), BLUEPRINT_LIMITS.maxStr.specialRequest),
+    itineraryDays: sanitizeItinerary(normalized.itineraryDays),
+    destinationPayments: sanitizeStringArray(normalized.destinationPayments, BLUEPRINT_LIMITS.maxArrayPayments, 200),
+    optionalServices: sanitizeOptionalServices(normalized.optionalServices),
+    transportIncluded: Boolean(normalized.transportIncluded),
+    transportSummary: ensureMinMaxString(normalized.transportSummary, 1, BLUEPRINT_LIMITS.maxStr.transportSummary, 'Según ficha técnica'),
+    transportCheckboxLabel: ensureMinMaxString(normalized.transportCheckboxLabel, 1, BLUEPRINT_LIMITS.maxStr.transportCheckbox, 'El cliente conoce las condiciones de transporte.'),
+    transportChecked: Boolean(normalized.transportChecked),
+    insuranceBasicSelected: Boolean(normalized.insuranceBasicSelected),
+    insuranceBasicLabel: ensureMinMaxString(normalized.insuranceBasicLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel, 'Seguro Básico de Asistencia en Viaje'),
+    insuranceBasicPrice: clampNumber(normalized.insuranceBasicPrice, 0, 10000),
+    insuranceCancellationSelected: Boolean(normalized.insuranceCancellationSelected),
+    insuranceCancellationLabel: ensureMinMaxString(normalized.insuranceCancellationLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel, 'Cobertura adicional de anulación'),
+    insuranceCancellationPrice: clampNumber(normalized.insuranceCancellationPrice, 0, 10000),
+    declineAssistanceInsurance: Boolean(normalized.declineAssistanceInsurance),
+    declineCancellationInsurance: Boolean(normalized.declineCancellationInsurance),
+    maeDestinationUrl: ensureMinMaxString(normalized.maeDestinationUrl, 1, BLUEPRINT_LIMITS.maxStr.maeUrl, 'https://www.exteriores.gob.es'),
     conceptLines,
-    installmentIntro: clampString(contract.installmentIntro.trim() || '-', BLUEPRINT_LIMITS.maxStr.installmentIntro),
+    installmentIntro: ensureMinMaxString(normalized.installmentIntro, 1, BLUEPRINT_LIMITS.maxStr.installmentIntro, 'Reserva y pago inicial según contrato.'),
     installmentLines,
     totalAmount: calculateConceptTotal(conceptLines),
-    anexoTransportDetail: clampString(contract.anexoTransportDetail.trim() || '-', BLUEPRINT_LIMITS.maxStr.anexoTransport),
-    anexoManagementDetail: clampString(contract.anexoManagementDetail.trim() || 'Gestión de pagos.', BLUEPRINT_LIMITS.maxStr.anexoManagement),
-    anexoAccommodationDetail: clampString(contract.anexoAccommodationDetail.trim() || '-', BLUEPRINT_LIMITS.maxStr.anexoAccommodation),
-    anexoIncludedServices: sanitizeStringArray(contract.anexoIncludedServices, BLUEPRINT_LIMITS.maxArrayServices, 200),
-    anexoHealthContacts: sanitizeStringArray(contract.anexoHealthContacts, BLUEPRINT_LIMITS.maxArrayHealth, 250),
-    generalConditionsDate: clampString(contract.generalConditionsDate.trim() || '14 de septiembre de 2026', BLUEPRINT_LIMITS.maxStr.dateText),
-    imageAuthorization: contract.imageAuthorization === 'declined' ? 'declined' : 'authorized',
+    anexoTransportDetail: ensureMinMaxString(normalized.anexoTransportDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoTransport, 'Según programa'),
+    anexoManagementDetail: ensureMinMaxString(normalized.anexoManagementDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoManagement, 'Gestión de pagos.'),
+    anexoAccommodationDetail: ensureMinMaxString(normalized.anexoAccommodationDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoAccommodation, 'Según programa'),
+    anexoIncludedServices: sanitizeStringArray(normalized.anexoIncludedServices, BLUEPRINT_LIMITS.maxArrayServices, 200),
+    anexoHealthContacts: sanitizeStringArray(normalized.anexoHealthContacts, BLUEPRINT_LIMITS.maxArrayHealth, 250),
+    generalConditionsDate: ensureMinMaxString(normalized.generalConditionsDate, 2, BLUEPRINT_LIMITS.maxStr.dateText, '14 de septiembre de 2026'),
+    imageAuthorization: normalized.imageAuthorization === 'declined' ? 'declined' : 'authorized',
   };
 }

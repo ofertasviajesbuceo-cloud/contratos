@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
+  AlertCircle,
   Building2,
   Cloud,
   CloudOff,
@@ -54,8 +55,13 @@ import { getRolePermissions, verifyPassword } from './utils/authCrypto';
 import {
   buildCanonicalUrl,
   createContractFromTemplate,
+  formatFirestoreErrorForUser,
   formatSpanishLongDate,
   generateNextContractNumber,
+  normalizeAgencyProfile,
+  normalizeClient,
+  normalizeContract,
+  normalizeTemplate,
   normalizeUsername,
   type TravelerRole,
 } from './utils/contractLogic';
@@ -155,21 +161,24 @@ function WorkspaceApp() {
 
   const [agency, setAgency] = useState<AgencyProfile>(() => {
     const stored = readLocalStorage(LS_KEYS.agency, DEFAULT_AGENCY_PROFILE);
-    return {
+    return normalizeAgencyProfile({
       ...DEFAULT_AGENCY_PROFILE,
       ...stored,
       publicDomain: stored.publicDomain ?? DEFAULT_AGENCY_PROFILE.publicDomain,
-    };
+    });
   });
-  const [clients, setClients] = useState<Client[]>(() =>
-    readLocalStorage(LS_KEYS.clients, SEED_CLIENTS)
-  );
-  const [templates, setTemplates] = useState<TripTemplate[]>(() =>
-    readLocalStorage(LS_KEYS.templates, SEED_TEMPLATES)
-  );
-  const [contracts, setContracts] = useState<TravelContract[]>(() =>
-    readLocalStorage(LS_KEYS.contracts, SEED_CONTRACTS)
-  );
+  const [clients, setClients] = useState<Client[]>(() => {
+    const raw = readLocalStorage(LS_KEYS.clients, SEED_CLIENTS);
+    return Array.isArray(raw) ? raw.map((c) => normalizeClient(c)) : SEED_CLIENTS;
+  });
+  const [templates, setTemplates] = useState<TripTemplate[]>(() => {
+    const raw = readLocalStorage(LS_KEYS.templates, SEED_TEMPLATES);
+    return Array.isArray(raw) ? raw.map((t) => normalizeTemplate(t)) : SEED_TEMPLATES;
+  });
+  const [contracts, setContracts] = useState<TravelContract[]>(() => {
+    const raw = readLocalStorage(LS_KEYS.contracts, SEED_CONTRACTS);
+    return Array.isArray(raw) ? raw.map((c) => normalizeContract(c)) : SEED_CONTRACTS;
+  });
   const [accessUsers, setAccessUsers] = useState<AccessUser[]>(() =>
     mergeWithPrimaryAdmin(readLocalStorage(LS_KEYS.accessUsers, SEED_ACCESS_USERS))
   );
@@ -185,6 +194,8 @@ function WorkspaceApp() {
 
   const [saveState, setSaveState] = useState<SaveSyncState>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
 
   // Firebase Auth listener
@@ -380,15 +391,20 @@ function WorkspaceApp() {
     if (user) {
       await signOut(auth);
     }
-    setAgency(readLocalStorage(LS_KEYS.agency, DEFAULT_AGENCY_PROFILE));
-    setClients(readLocalStorage(LS_KEYS.clients, SEED_CLIENTS));
-    setTemplates(readLocalStorage(LS_KEYS.templates, SEED_TEMPLATES));
-    setContracts(readLocalStorage(LS_KEYS.contracts, SEED_CONTRACTS));
+    setAgency(normalizeAgencyProfile(readLocalStorage(LS_KEYS.agency, DEFAULT_AGENCY_PROFILE)));
+    const storedClients = readLocalStorage(LS_KEYS.clients, SEED_CLIENTS);
+    setClients(Array.isArray(storedClients) ? storedClients.map((c) => normalizeClient(c)) : SEED_CLIENTS);
+    const storedTemplates = readLocalStorage(LS_KEYS.templates, SEED_TEMPLATES);
+    setTemplates(Array.isArray(storedTemplates) ? storedTemplates.map((t) => normalizeTemplate(t)) : SEED_TEMPLATES);
+    const storedContracts = readLocalStorage(LS_KEYS.contracts, SEED_CONTRACTS);
+    setContracts(Array.isArray(storedContracts) ? storedContracts.map((c) => normalizeContract(c)) : SEED_CONTRACTS);
     setAccessUsers(
       mergeWithPrimaryAdmin(readLocalStorage(LS_KEYS.accessUsers, SEED_ACCESS_USERS))
     );
     setActiveContractId(null);
     setSaveState('idle');
+    setRemoteError(null);
+    setActionError(null);
   };
 
   const formatTimeNow = () =>
@@ -398,6 +414,7 @@ function WorkspaceApp() {
     if (!permissions.canEditContracts) return;
     setContracts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     setSaveState('saving');
+    setRemoteError(null);
 
     if (autoSaveTimerRef.current) {
       window.clearTimeout(autoSaveTimerRef.current);
@@ -409,9 +426,11 @@ function WorkspaceApp() {
           await upsertContractRemote(user.uid, updated, false);
           setSaveState('saved');
           setLastSavedAt(formatTimeNow());
+          setRemoteError(null);
         } catch (err) {
           console.error(err);
           setSaveState('error');
+          setRemoteError(formatFirestoreErrorForUser(err));
         }
       } else {
         setSaveState('local');
@@ -428,6 +447,7 @@ function WorkspaceApp() {
     setEditorInitialMode(mode);
     setActiveContractId(contractId);
     setSaveState(user ? 'saved' : 'local');
+    setRemoteError(null);
   };
 
   const handleCreateContract = async (params: {
@@ -437,51 +457,82 @@ function WorkspaceApp() {
     contractNumber: string;
     travelerRole: TravelerRole;
   }) => {
-    if (!permissions.canEditContracts) return;
+    if (!permissions.canEditContracts) {
+      throw new Error('Tu usuario no tiene permisos para crear contratos.');
+    }
     const template = templates.find((t) => t.id === params.templateId);
-    if (!template) return;
-
-    const ownerId = user?.uid || 'local-demo';
-
-    if (params.isNewClient) {
-      const clientWithOwner = { ...params.client, ownerId };
-      setClients((prev) => [clientWithOwner, ...prev]);
-      if (user) {
-        await upsertClientRemote(user.uid, clientWithOwner, true);
-      }
+    if (!template) {
+      throw new Error('Selecciona una plantilla de viaje válida.');
     }
 
-    const newId = `ctr-${Date.now()}`;
+    setActionError(null);
+    setRemoteError(null);
+
+    const ownerId = user?.uid || 'local-demo';
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const clientWithOwner = {
+      ...normalizeClient(params.client),
+      id: params.client.id || `cli-${uniqueSuffix}`,
+      ownerId,
+    };
+
+    if (params.isNewClient) {
+      if (user) {
+        const alreadyExists = clients.some((c) => c.id === clientWithOwner.id);
+        if (!alreadyExists) {
+          try {
+            await upsertClientRemote(user.uid, clientWithOwner, true);
+          } catch (err) {
+            console.error(err);
+            throw new Error(formatFirestoreErrorForUser(err));
+          }
+        }
+      }
+      setClients((prev) =>
+        prev.some((c) => c.id === clientWithOwner.id) ? prev : [clientWithOwner, ...prev]
+      );
+    }
+
     const created = createContractFromTemplate({
-      id: newId,
+      id: `ctr-${uniqueSuffix}`,
       ownerId,
       template,
-      client: params.client,
+      client: clientWithOwner,
       agency,
       contractNumber: params.contractNumber,
       contractDateText: formatSpanishLongDate(),
       travelerRole: params.travelerRole,
     });
 
-    setContracts((prev) => [created, ...prev]);
-    setNewModalOpen(false);
-    setNewModalTemplateId(undefined);
-    setNewModalClientId(undefined);
-    setActiveTab('contracts');
-    setEditorInitialMode('split');
-    setActiveContractId(created.id);
-
     if (user) {
       setSaveState('saving');
       try {
         await upsertContractRemote(user.uid, created, true);
+        setContracts((prev) => [created, ...prev]);
+        setNewModalOpen(false);
+        setNewModalTemplateId(undefined);
+        setNewModalClientId(undefined);
+        setActiveTab('contracts');
+        setEditorInitialMode('split');
+        setActiveContractId(created.id);
         setSaveState('saved');
         setLastSavedAt(formatTimeNow());
+        setRemoteError(null);
       } catch (err) {
         console.error(err);
         setSaveState('error');
+        const readable = formatFirestoreErrorForUser(err);
+        setRemoteError(readable);
+        throw new Error(readable);
       }
     } else {
+      setContracts((prev) => [created, ...prev]);
+      setNewModalOpen(false);
+      setNewModalTemplateId(undefined);
+      setNewModalClientId(undefined);
+      setActiveTab('contracts');
+      setEditorInitialMode('split');
+      setActiveContractId(created.id);
       setSaveState('local');
       setLastSavedAt(formatTimeNow());
     }
@@ -489,102 +540,159 @@ function WorkspaceApp() {
 
   const handleDuplicateContract = async (source: TravelContract) => {
     if (!permissions.canEditContracts) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
     const nextNumber = generateNextContractNumber(contracts);
     const copy: TravelContract = {
-      ...source,
-      id: `ctr-${Date.now()}`,
+      ...normalizeContract(source),
+      id: `ctr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       ownerId,
       contractNumber: nextNumber,
       contractDateText: formatSpanishLongDate(),
       status: 'draft',
     };
-    setContracts((prev) => [copy, ...prev]);
     if (user) {
-      await upsertContractRemote(user.uid, copy, true);
+      try {
+        await upsertContractRemote(user.uid, copy, true);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setContracts((prev) => [copy, ...prev]);
     handleOpenContract(copy.id, 'split');
   };
 
   const handleDeleteContract = async (contractId: string) => {
     if (!permissions.canDeleteRecords) return;
+    setActionError(null);
+    if (user) {
+      try {
+        await deleteContractRemote(contractId);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
+    }
     setContracts((prev) => prev.filter((c) => c.id !== contractId));
     if (activeContractId === contractId) {
       setActiveContractId(null);
-    }
-    if (user) {
-      await deleteContractRemote(contractId);
     }
   };
 
   const handleSaveTemplate = async (template: TripTemplate, isNew: boolean) => {
     if (!permissions.canEditTemplates) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
-    const withOwner = { ...template, ownerId };
+    const withOwner = { ...normalizeTemplate(template), ownerId };
+    if (user) {
+      try {
+        await upsertTemplateRemote(user.uid, withOwner, isNew);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
+    }
     setTemplates((prev) => {
       if (isNew) return [withOwner, ...prev];
       return prev.map((t) => (t.id === withOwner.id ? withOwner : t));
     });
-    if (user) {
-      await upsertTemplateRemote(user.uid, withOwner, isNew);
-    }
   };
 
   const handleDeleteTemplate = async (templateId: string) => {
     if (!permissions.canDeleteRecords) return;
-    setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+    setActionError(null);
     if (user) {
-      await deleteTemplateRemote(templateId);
+      try {
+        await deleteTemplateRemote(templateId);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setTemplates((prev) => prev.filter((t) => t.id !== templateId));
   };
 
   const handleSaveClient = async (client: Client, isNew: boolean) => {
     if (!permissions.canEditClients) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
-    const withOwner = { ...client, ownerId };
+    const withOwner = { ...normalizeClient(client), ownerId };
+    if (user) {
+      try {
+        await upsertClientRemote(user.uid, withOwner, isNew);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
+    }
     setClients((prev) => {
       if (isNew) return [withOwner, ...prev];
       return prev.map((c) => (c.id === withOwner.id ? withOwner : c));
     });
-    if (user) {
-      await upsertClientRemote(user.uid, withOwner, isNew);
-    }
   };
 
   const handleDeleteClient = async (clientId: string) => {
     if (!permissions.canDeleteRecords) return;
-    setClients((prev) => prev.filter((c) => c.id !== clientId));
+    setActionError(null);
     if (user) {
-      await deleteClientRemote(clientId);
+      try {
+        await deleteClientRemote(clientId);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setClients((prev) => prev.filter((c) => c.id !== clientId));
   };
 
   const handleSaveAgency = async (updated: AgencyProfile) => {
     if (!permissions.canManageAgency) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
-    const withOwner = { ...updated, ownerId };
-    setAgency(withOwner);
+    const withOwner = { ...normalizeAgencyProfile(updated), ownerId };
     if (user) {
-      await saveAgencyProfileRemote(user.uid, withOwner);
+      try {
+        await saveAgencyProfileRemote(user.uid, withOwner);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setAgency(withOwner);
   };
 
   const handleSaveDomain = async (normalizedDomain: string) => {
     if (!permissions.canManageDomain) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
     const withOwner: AgencyProfile = {
-      ...agency,
+      ...normalizeAgencyProfile(agency),
       ownerId,
       publicDomain: normalizedDomain,
     };
-    setAgency(withOwner);
     if (user) {
-      await saveAgencyProfileRemote(user.uid, withOwner);
+      try {
+        await saveAgencyProfileRemote(user.uid, withOwner);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setAgency(withOwner);
   };
 
   const handleSaveAccessUser = async (accessUser: AccessUser, isNew: boolean) => {
     if (!permissions.canManageUsers) return;
+    setActionError(null);
     const ownerId = user?.uid || 'local-demo';
     const withOwner: AccessUser = {
       ...accessUser,
@@ -592,6 +700,15 @@ function WorkspaceApp() {
       role: accessUser.isPrimary ? 'admin' : accessUser.role,
       active: accessUser.isPrimary ? true : accessUser.active,
     };
+    if (user) {
+      try {
+        await upsertAccessUserRemote(user.uid, withOwner, isNew);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
+    }
     setAccessUsers((prev) => {
       const next = isNew
         ? [...prev, withOwner]
@@ -609,19 +726,23 @@ function WorkspaceApp() {
       setSession(updatedSession);
       writeSessionStorage(updatedSession);
     }
-    if (user) {
-      await upsertAccessUserRemote(user.uid, withOwner, isNew);
-    }
   };
 
   const handleDeleteAccessUser = async (accessUserId: string) => {
     if (!permissions.canManageUsers) return;
     const target = accessUsers.find((u) => u.id === accessUserId);
     if (!target || target.isPrimary || session?.userId === accessUserId) return;
-    setAccessUsers((prev) => prev.filter((u) => u.id !== accessUserId));
+    setActionError(null);
     if (user) {
-      await deleteAccessUserRemote(accessUserId);
+      try {
+        await deleteAccessUserRemote(accessUserId);
+      } catch (err) {
+        console.error(err);
+        setActionError(formatFirestoreErrorForUser(err));
+        return;
+      }
     }
+    setAccessUsers((prev) => prev.filter((u) => u.id !== accessUserId));
   };
 
   const openNewContractFromTemplate = (templateId: string) => {
@@ -918,7 +1039,27 @@ function WorkspaceApp() {
         </header>
 
         {/* Viewport */}
-        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto print:p-0 print:max-w-none">
+        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto print:p-0 print:max-w-none space-y-4">
+          {actionError && (
+            <div
+              role="alert"
+              className="no-print flex items-start justify-between gap-3 bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-3 text-sm"
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{actionError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                aria-label="Cerrar aviso de error"
+                className="p-1 text-red-500 hover:text-red-800 rounded"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
           {activeContract ? (
             <ContractEditorView
               contract={activeContract}
@@ -929,6 +1070,7 @@ function WorkspaceApp() {
               readOnly={!permissions.canEditContracts}
               saveState={saveState}
               lastSavedAt={lastSavedAt}
+              remoteError={remoteError}
               onChange={handleContractEdit}
               onBack={() => setActiveContractId(null)}
             />

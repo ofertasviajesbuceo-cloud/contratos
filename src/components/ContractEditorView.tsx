@@ -34,6 +34,7 @@ interface ContractEditorViewProps {
   readOnly?: boolean;
   saveState: SaveSyncState;
   lastSavedAt: string | null;
+  remoteError?: string | null;
   onChange: (updated: TravelContract) => void;
   onBack: () => void;
 }
@@ -49,6 +50,7 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
   readOnly = false,
   saveState,
   lastSavedAt,
+  remoteError,
   onChange,
   onBack,
 }) => {
@@ -252,7 +254,11 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
                 `Guardado automático en base de datos${lastSavedAt ? ` · ${lastSavedAt}` : ''}`}
               {saveState === 'local' &&
                 `Guardado local automático${lastSavedAt ? ` · ${lastSavedAt}` : ''}`}
-              {saveState === 'error' && 'Error al guardar cambios en la nube'}
+              {saveState === 'error' && (
+                <span className="text-red-700 font-medium">
+                  {remoteError || 'Error al guardar cambios en la nube'}
+                </span>
+              )}
               {saveState === 'idle' && `Plantilla: ${contract.templateName || 'Personalizada'}`}
             </p>
           </div>
