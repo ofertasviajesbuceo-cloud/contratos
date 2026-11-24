@@ -200,33 +200,49 @@ function WorkspaceApp() {
 
   // Firebase Auth listener
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
+    const fallbackTimer = window.setTimeout(() => {
       setAuthReady(true);
-      if (currentUser) {
-        setSession((prev) => {
-          if (prev && prev.authSource === 'local-user') {
-            return prev;
+    }, 2500);
+
+    const unsub = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+        window.clearTimeout(fallbackTimer);
+        setUser(currentUser);
+        setAuthReady(true);
+        if (currentUser) {
+          setSession((prev) => {
+            if (prev && prev.authSource === 'local-user') {
+              return prev;
+            }
+            const nextGoogleSession: ActiveSession = {
+              userId: currentUser.uid,
+              username: currentUser.email?.split('@')[0] || 'google',
+              displayName: currentUser.displayName || currentUser.email || 'Administrador',
+              email: currentUser.email || '',
+              role: 'admin',
+              authSource: 'google',
+            };
+            writeSessionStorage(nextGoogleSession);
+            return nextGoogleSession;
+          });
+          try {
+            await ensureUserWorkspaceSeeded(currentUser.uid);
+          } catch (err) {
+            console.error(err);
           }
-          const nextGoogleSession: ActiveSession = {
-            userId: currentUser.uid,
-            username: currentUser.email?.split('@')[0] || 'google',
-            displayName: currentUser.displayName || currentUser.email || 'Administrador',
-            email: currentUser.email || '',
-            role: 'admin',
-            authSource: 'google',
-          };
-          writeSessionStorage(nextGoogleSession);
-          return nextGoogleSession;
-        });
-        try {
-          await ensureUserWorkspaceSeeded(currentUser.uid);
-        } catch (err) {
-          console.error(err);
         }
+      },
+      (error) => {
+        window.clearTimeout(fallbackTimer);
+        console.error(error);
+        setAuthReady(true);
       }
-    });
-    return () => unsub();
+    );
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      unsub();
+    };
   }, []);
 
   // Firestore real-time subscriptions when authenticated
