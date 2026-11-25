@@ -5,6 +5,7 @@ import {
   Columns2,
   Eye,
   FileEdit,
+  PenTool,
   Plus,
   Printer,
   Trash2,
@@ -13,13 +14,21 @@ import type {
   AgencyProfile,
   Client,
   ContractStatus,
+  FlightPaymentMode,
+  InstallmentCount,
+  InsurancePolicyOption,
   SaveSyncState,
   TravelContract,
   TripTemplate,
 } from '../types/contract';
 import {
+  buildInstallmentSchedule,
   calculateConceptTotal,
+  extractDefaultPolicyFromLabel,
   formatEuro,
+  normalizeFlightPaymentMode,
+  normalizeInstallmentCount,
+  normalizeInsurancePolicies,
   syncContractFinancialLines,
   validateContractInput,
 } from '../utils/contractLogic';
@@ -36,6 +45,8 @@ interface ContractEditorViewProps {
   lastSavedAt: string | null;
   remoteError?: string | null;
   onChange: (updated: TravelContract) => void;
+  onUpdateAgency?: (updated: AgencyProfile) => void;
+  onSendForSignature?: () => void;
   onBack: () => void;
 }
 
@@ -52,12 +63,18 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
   lastSavedAt,
   remoteError,
   onChange,
+  onUpdateAgency,
+  onSendForSignature,
   onBack,
 }) => {
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>(initialViewMode);
   const [activeSection, setActiveSection] = useState<EditorSection>('cliente');
   const [newRepresented, setNewRepresented] = useState('');
   const [newDestPayment, setNewDestPayment] = useState('');
+  const [addingPolicy, setAddingPolicy] = useState(false);
+  const [newPolicyInsurer, setNewPolicyInsurer] = useState('AXA');
+  const [newPolicyNum, setNewPolicyNum] = useState('');
+  const [newPolicyName, setNewPolicyName] = useState('');
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const previewContentRef = useRef<HTMLDivElement | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
@@ -132,6 +149,9 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
       transportSummary: tpl.transportSummary,
       transportCheckboxLabel: tpl.transportCheckboxLabel,
       transportChecked: !tpl.transportIncluded,
+      flightDetails: tpl.flightDetails ?? '',
+      flightPrice: !tpl.transportIncluded ? tpl.flightPrice ?? 0 : 0,
+      flightPaymentMode: normalizeFlightPaymentMode(tpl.flightPaymentMode),
       insuranceBasicLabel: tpl.insuranceBasicLabel,
       insuranceBasicPrice: tpl.insuranceBasicPrice,
       insuranceCancellationLabel: tpl.insuranceCancellationLabel,
@@ -160,6 +180,10 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
     );
   };
 
+  const insurancePolicies = normalizeInsurancePolicies(agency.insurancePolicies);
+  const anyInsuranceSelected =
+    contract.insuranceBasicSelected || contract.insuranceCancellationSelected;
+
   const handleToggleInsurance = (
     field: 'insuranceBasicSelected' | 'insuranceCancellationSelected'
   ) => {
@@ -173,15 +197,40 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
         ? !contract.insuranceCancellationSelected
         : contract.insuranceCancellationSelected;
 
+    const defaultPolicy =
+      contract.insurancePolicyNumber?.trim() ||
+      extractDefaultPolicyFromLabel(contract.insuranceBasicLabel) ||
+      insurancePolicies[0]?.policyNumber ||
+      '';
+
     onChange(
       syncContractFinancialLines({
         ...contract,
         insuranceBasicSelected: nextBasic,
         insuranceCancellationSelected: nextCancel,
+        insurancePolicyNumber: nextBasic || nextCancel ? defaultPolicy : contract.insurancePolicyNumber,
         declineAssistanceInsurance: !nextBasic,
         declineCancellationInsurance: !nextCancel,
       })
     );
+  };
+
+  const handleSaveNewPolicy = () => {
+    const cleanNum = newPolicyNum.trim();
+    if (!cleanNum || !onUpdateAgency) return;
+    const cleanInsurer = newPolicyInsurer.trim() || 'AXA';
+    const createdPolicy: InsurancePolicyOption = {
+      id: `pol-${Date.now()}`,
+      insurer: cleanInsurer,
+      policyNumber: cleanNum,
+      name: newPolicyName.trim() || `${cleanInsurer} · ${cleanNum}`,
+    };
+    const nextPolicies = [...insurancePolicies, createdPolicy].slice(0, 20);
+    onUpdateAgency({ ...agency, insurancePolicies: nextPolicies });
+    onChange({ ...contract, insurancePolicyNumber: cleanNum });
+    setAddingPolicy(false);
+    setNewPolicyNum('');
+    setNewPolicyName('');
   };
 
   const handleConceptAmountChange = (conceptId: string, amountStr: string) => {
@@ -192,31 +241,311 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
       line.id === conceptId ? { ...line, amount: safeAmount } : line
     );
     const totalAmount = calculateConceptTotal(updatedLines);
-    const insuranceTotal =
-      (contract.insuranceBasicSelected ? contract.insuranceBasicPrice : 0) +
-      (contract.insuranceCancellationSelected ? contract.insuranceCancellationPrice : 0);
-    const updatedInstallments = contract.installmentLines.map((inst) =>
-      inst.id === 'inst-package'
-        ? { ...inst, amount: Math.max(0, Math.round((totalAmount - insuranceTotal) * 100) / 100) }
-        : inst
-    );
-    onChange({
+    const nextDraft: TravelContract = {
       ...contract,
+      ...(conceptId === 'flights' ? { flightPrice: safeAmount } : {}),
       conceptLines: updatedLines,
-      installmentLines: updatedInstallments,
       totalAmount,
+    };
+    const updatedInstallments = buildInstallmentSchedule(nextDraft).flatMap((stage) => stage.lines);
+    onChange({
+      ...nextDraft,
+      installmentLines: updatedInstallments,
     });
   };
 
   const handleConceptLabelChange = (conceptId: string, label: string) => {
     if (isArchived) return;
-    onChange({
+    const updatedLines = contract.conceptLines.map((line) =>
+      line.id === conceptId ? { ...line, label } : line
+    );
+    const nextDraft: TravelContract = {
       ...contract,
-      conceptLines: contract.conceptLines.map((line) =>
-        line.id === conceptId ? { ...line, label } : line
-      ),
+      conceptLines: updatedLines,
+    };
+    onChange({
+      ...nextDraft,
+      installmentLines: buildInstallmentSchedule(nextDraft).flatMap((stage) => stage.lines),
     });
   };
+
+  const handleInstallmentCountChange = (count: InstallmentCount) => {
+    if (isArchived) return;
+    const nextDraft: TravelContract = {
+      ...contract,
+      installmentCount: count,
+    };
+    onChange({
+      ...nextDraft,
+      installmentLines: buildInstallmentSchedule(nextDraft).flatMap((stage) => stage.lines),
+    });
+  };
+
+  const handleTransportOptionChange = (included: boolean) => {
+    if (isArchived) return;
+    const currentSummary = (contract.transportSummary ?? '').trim();
+    let nextSummary = currentSummary;
+    if (included) {
+      if (
+        !currentSummary ||
+        /\bno\s+est[aá]n\s+incluido/i.test(currentSummary) ||
+        /no\s+incluidos/i.test(currentSummary)
+      ) {
+        nextSummary =
+          'En el viaje combinado SÍ están incluidos los vuelos según las fechas y datos detallados.';
+      }
+    } else if (
+      !currentSummary ||
+      /\bs[ií]\s+est[aá]n\s+incluido/i.test(currentSummary)
+    ) {
+      nextSummary =
+        'En el viaje combinado NO están incluidos los vuelos en el paquete base (detalle aparte).';
+    }
+
+    const currentCheckbox = (contract.transportCheckboxLabel ?? '').trim();
+    let nextCheckbox = currentCheckbox;
+    if (included) {
+      if (
+        !currentCheckbox ||
+        /vuelos\s+aparte/i.test(currentCheckbox) ||
+        /no\s+incluidos/i.test(currentCheckbox)
+      ) {
+        nextCheckbox = 'Vuelos incluidos y condiciones de transporte confirmadas según ficha técnica.';
+      }
+    } else if (
+      !currentCheckbox ||
+      /vuelos.*incluidos/i.test(currentCheckbox)
+    ) {
+      nextCheckbox = 'El cliente conoce las condiciones de transporte y los datos/importe de los vuelos aparte.';
+    }
+
+    onChange(
+      syncContractFinancialLines({
+        ...contract,
+        transportIncluded: included,
+        transportSummary: nextSummary,
+        transportCheckboxLabel: nextCheckbox,
+        flightPrice: included ? 0 : contract.flightPrice ?? 0,
+      })
+    );
+  };
+
+  const handleFlightPriceChange = (priceStr: string) => {
+    if (isArchived) return;
+    const parsed = Number(priceStr);
+    const safePrice = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    onChange(
+      syncContractFinancialLines({
+        ...contract,
+        transportIncluded: false,
+        flightPrice: safePrice,
+      })
+    );
+  };
+
+  const handleFlightPaymentModeChange = (mode: FlightPaymentMode) => {
+    if (isArchived) return;
+    onChange(
+      syncContractFinancialLines({
+        ...contract,
+        flightPaymentMode: mode,
+      })
+    );
+  };
+
+  const activeFlightMode = normalizeFlightPaymentMode(contract.flightPaymentMode);
+
+  const renderTransportFlightsBlock = (showAnexoDetailInput: boolean) => (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="block text-xs font-semibold text-slate-700">
+          Transporte y Vuelos (Punto VIII y Anexo I)
+        </span>
+        <span className="text-[11px] font-medium text-slate-500">
+          {contract.transportIncluded ? 'Opción 1: Incluidos' : 'Opción 2: Aparte'}
+        </span>
+      </div>
+
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+        role="radiogroup"
+        aria-label="Modalidad de vuelos en Punto VIII y Anexo I"
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={contract.transportIncluded}
+          disabled={isArchived}
+          onClick={() => handleTransportOptionChange(true)}
+          className={`flex items-start gap-2 p-2.5 text-left rounded-lg border transition-colors ${
+            contract.transportIncluded
+              ? 'bg-blue-50 border-blue-600 text-blue-900'
+              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <span
+            className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+              contract.transportIncluded ? 'border-blue-700' : 'border-slate-400'
+            }`}
+          >
+            {contract.transportIncluded && (
+              <span className="w-2 h-2 rounded-full bg-blue-700" />
+            )}
+          </span>
+          <span className="text-xs leading-snug">
+            <span className="font-semibold block">Opción 1 · Vuelos incluidos</span>
+            <span className="text-[11px] opacity-80">
+              Incluidos en el precio del viaje. Añade fechas y datos de vuelo.
+            </span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!contract.transportIncluded}
+          disabled={isArchived}
+          onClick={() => handleTransportOptionChange(false)}
+          className={`flex items-start gap-2 p-2.5 text-left rounded-lg border transition-colors ${
+            !contract.transportIncluded
+              ? 'bg-blue-50 border-blue-600 text-blue-900'
+              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <span
+            className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+              !contract.transportIncluded ? 'border-blue-700' : 'border-slate-400'
+            }`}
+          >
+            {!contract.transportIncluded && (
+              <span className="w-2 h-2 rounded-full bg-blue-700" />
+            )}
+          </span>
+          <span className="text-xs leading-snug">
+            <span className="font-semibold block">Opción 2 · Vuelos aparte</span>
+            <span className="text-[11px] opacity-80">
+              Añade datos de vuelos y su precio aparte al Punto XIV.
+            </span>
+          </span>
+        </button>
+      </div>
+
+      <div>
+        <label
+          htmlFor="ctr-flight-details"
+          className="block text-xs font-medium text-slate-700 mb-1"
+        >
+          Fechas y datos de los vuelos
+        </label>
+        <textarea
+          id="ctr-flight-details"
+          rows={2}
+          disabled={isArchived}
+          value={contract.flightDetails ?? ''}
+          onChange={(e) => updateField('flightDetails', e.target.value)}
+          placeholder="Ej. Ida 10/10 BCN 08:30 -> HRG 14:15 (IB3412) · Vuelta 17/10 HRG 15:20 -> BCN 19:45"
+          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+        />
+      </div>
+
+      {!contract.transportIncluded && (
+        <div className="p-3 bg-blue-50/40 border border-blue-200 rounded-lg space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+            <div>
+              <label
+                htmlFor="ctr-flight-price"
+                className="block text-xs font-medium text-slate-800 mb-1"
+              >
+                Precio de los vuelos aparte (€)
+              </label>
+              <input
+                id="ctr-flight-price"
+                type="number"
+                step="0.01"
+                min={0}
+                disabled={isArchived}
+                value={contract.flightPrice ?? 0}
+                onChange={(e) => handleFlightPriceChange(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs font-mono tabular-nums bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <p className="text-[11px] text-slate-600 leading-snug">
+              {(contract.flightPrice ?? 0) > 0
+                ? 'Se suma automáticamente en el Resumen de Conceptos y Pagos (Punto XIV).'
+                : 'Si indicas un importe mayor que 0 €, se añadirá al Punto XIV.'}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="block text-[11px] font-semibold text-slate-700">
+              Forma de abono de los vuelos aparte
+            </span>
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+              role="radiogroup"
+              aria-label="Forma de pago de los vuelos aparte"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={activeFlightMode === 'first_installment'}
+                disabled={isArchived}
+                onClick={() => handleFlightPaymentModeChange('first_installment')}
+                className={`px-2.5 py-2 text-xs font-medium rounded-md border text-left transition-colors ${
+                  activeFlightMode === 'first_installment'
+                    ? 'bg-white border-blue-600 text-blue-800 shadow-sm'
+                    : 'bg-white/70 border-slate-200 text-slate-600 hover:bg-white'
+                }`}
+              >
+                Abonar íntegramente en el 1º pago
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={activeFlightMode === 'prorated'}
+                disabled={isArchived}
+                onClick={() => handleFlightPaymentModeChange('prorated')}
+                className={`px-2.5 py-2 text-xs font-medium rounded-md border text-left transition-colors ${
+                  activeFlightMode === 'prorated'
+                    ? 'bg-white border-blue-600 text-blue-800 shadow-sm'
+                    : 'bg-white/70 border-slate-200 text-slate-600 hover:bg-white'
+                }`}
+              >
+                Prorratear en los plazos seleccionados
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <label className="flex items-center gap-2 text-xs text-slate-700">
+        <input
+          type="checkbox"
+          disabled={isArchived}
+          checked={contract.transportChecked}
+          onChange={(e) => updateField('transportChecked', e.target.checked)}
+          className="rounded border-slate-300 text-blue-700"
+        />
+        <span>{contract.transportCheckboxLabel}</span>
+      </label>
+
+      {showAnexoDetailInput && (
+        <div>
+          <label htmlFor="ctr-anexo-trans" className="block text-xs font-medium text-slate-700 mb-1">
+            Detalle Transporte (Anexo I - A)
+          </label>
+          <input
+            id="ctr-anexo-trans"
+            type="text"
+            disabled={isArchived}
+            value={contract.anexoTransportDetail}
+            onChange={(e) => updateField('anexoTransportDetail', e.target.value)}
+            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg"
+          />
+        </div>
+      )}
+    </div>
+  );
 
   const handlePrint = () => {
     if (viewMode === 'form') {
@@ -316,6 +645,17 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
             <Printer className="w-3.5 h-3.5" aria-hidden="true" />
             Imprimir / Guardar PDF
           </button>
+
+          {!readOnly && onSendForSignature && (
+            <button
+              type="button"
+              onClick={onSendForSignature}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            >
+              <PenTool className="w-3.5 h-3.5" aria-hidden="true" />
+              Enviar a la firma
+            </button>
+          )}
         </div>
       </div>
 
@@ -867,10 +1207,157 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
                         +{formatEuro(contract.insuranceCancellationPrice)}
                       </span>
                     </label>
+
+                    {/* Enabled box when at least one insurance is selected */}
+                    <div
+                      className={`p-3 rounded-lg border transition-colors space-y-3 ${
+                        anyInsuranceSelected
+                          ? 'bg-blue-50/40 border-blue-200'
+                          : 'bg-slate-50 border-slate-200 opacity-65'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-800">
+                          Póliza y Nº de Certificado
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {anyInsuranceSelected
+                            ? 'Habilitado para este contrato'
+                            : 'Selecciona un seguro para habilitar'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label
+                            htmlFor="ctr-insurance-policy"
+                            className="block text-[11px] font-medium text-slate-700 mb-1"
+                          >
+                            Póliza de seguro
+                          </label>
+                          <select
+                            id="ctr-insurance-policy"
+                            disabled={isArchived || !anyInsuranceSelected}
+                            value={
+                              addingPolicy
+                                ? '__add__'
+                                : contract.insurancePolicyNumber ?? ''
+                            }
+                            onChange={(e) => {
+                              if (e.target.value === '__add__') {
+                                setAddingPolicy(true);
+                              } else {
+                                setAddingPolicy(false);
+                                updateField('insurancePolicyNumber', e.target.value);
+                              }
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            <option value="">Seleccionar póliza...</option>
+                            {insurancePolicies.map((pol) => (
+                              <option key={pol.id} value={pol.policyNumber}>
+                                {pol.insurer} · {pol.policyNumber} ({pol.name})
+                              </option>
+                            ))}
+                            {contract.insurancePolicyNumber &&
+                              !insurancePolicies.some(
+                                (p) => p.policyNumber === contract.insurancePolicyNumber
+                              ) && (
+                                <option value={contract.insurancePolicyNumber}>
+                                  Póliza {contract.insurancePolicyNumber}
+                                </option>
+                              )}
+                            {onUpdateAgency && insurancePolicies.length < 20 && (
+                              <option value="__add__">+ Añadir nueva póliza al listado...</option>
+                            )}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="ctr-insurance-cert"
+                            className="block text-[11px] font-medium text-slate-700 mb-1"
+                          >
+                            Número de certificado
+                          </label>
+                          <input
+                            id="ctr-insurance-cert"
+                            type="text"
+                            disabled={isArchived || !anyInsuranceSelected}
+                            value={contract.insuranceCertificateNumber ?? ''}
+                            onChange={(e) =>
+                              updateField('insuranceCertificateNumber', e.target.value)
+                            }
+                            placeholder={
+                              anyInsuranceSelected
+                                ? 'Ej. 000 o CERT-2026-042'
+                                : 'Habilitado al elegir seguro'
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
+                          />
+                        </div>
+                      </div>
+
+                      {addingPolicy && anyInsuranceSelected && onUpdateAgency && (
+                        <div className="p-2.5 bg-white border border-blue-200 rounded-md space-y-2">
+                          <span className="block text-[11px] font-semibold text-slate-700">
+                            Añadir nueva póliza al listado de la agencia
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <input
+                              type="text"
+                              aria-label="Aseguradora"
+                              placeholder="Aseguradora (ej. AXA)"
+                              value={newPolicyInsurer}
+                              onChange={(e) => setNewPolicyInsurer(e.target.value)}
+                              className="px-2 py-1 text-xs border border-slate-200 rounded"
+                            />
+                            <input
+                              type="text"
+                              aria-label="Número de póliza"
+                              placeholder="Nº de póliza"
+                              value={newPolicyNum}
+                              onChange={(e) => setNewPolicyNum(e.target.value)}
+                              className="px-2 py-1 text-xs font-mono border border-slate-200 rounded"
+                            />
+                            <input
+                              type="text"
+                              aria-label="Nombre descriptivo de póliza"
+                              placeholder="Nombre / Cobertura"
+                              value={newPolicyName}
+                              onChange={(e) => setNewPolicyName(e.target.value)}
+                              className="px-2 py-1 text-xs border border-slate-200 rounded"
+                            />
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setAddingPolicy(false)}
+                              className="px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!newPolicyNum.trim()}
+                              onClick={handleSaveNewPolicy}
+                              className="px-2.5 py-1 text-[11px] font-medium text-white bg-blue-700 hover:bg-blue-800 rounded disabled:opacity-50"
+                            >
+                              Guardar póliza
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Punto VIII & Anexo I Flights / Transport */}
+                  <div className="border-t border-slate-200 pt-4">
+                    {renderTransportFlightsBlock(false)}
                   </div>
 
                   {/* Punto XIV Economic Lines */}
-                  <div className="border-t border-slate-200 pt-4 space-y-2.5">
+                  <div className="border-t border-slate-200 pt-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-700">
                         Resumen de Conceptos y Pagos (Punto XIV)
@@ -902,6 +1389,79 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
                         />
                       </div>
                     ))}
+
+                    {/* Installment Count Selector */}
+                    <div className="pt-2 space-y-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-700">
+                          Número de plazos de pago
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          Inicio: {contract.startDateText}
+                        </span>
+                      </div>
+
+                      <div
+                        className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 bg-slate-100 rounded-lg"
+                        role="group"
+                        aria-label="Número de plazos de pago"
+                      >
+                        {([1, 2, 3, 4, 5, 6] as const).map((count) => {
+                          const isSelected =
+                            normalizeInstallmentCount(contract.installmentCount) === count;
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              disabled={isArchived}
+                              aria-pressed={isSelected}
+                              onClick={() => handleInstallmentCountChange(count)}
+                              className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                                isSelected
+                                  ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              {count === 1 ? '1 plazo' : `${count} plazos`}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="space-y-2 pt-1">
+                        {buildInstallmentSchedule(contract).map((stage) => (
+                          <div
+                            key={stage.id}
+                            className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-slate-800">
+                                {stage.title}
+                              </span>
+                              <span className="text-xs font-bold font-mono tabular-nums text-blue-800">
+                                {formatEuro(stage.subtotal)}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-snug italic">
+                              {stage.introText}
+                            </p>
+                            <ul className="space-y-0.5 text-[11px] text-slate-700">
+                              {stage.lines.map((item) => (
+                                <li
+                                  key={item.id}
+                                  className="flex items-center justify-between gap-2"
+                                >
+                                  <span className="truncate">{item.label}</span>
+                                  <span className="font-mono tabular-nums shrink-0">
+                                    {formatEuro(item.amount)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
@@ -909,32 +1469,7 @@ export const ContractEditorView: React.FC<ContractEditorViewProps> = ({
               {activeSection === 'anexos' && (
                 <>
                   <div className="space-y-3">
-                    <span className="block text-xs font-semibold text-slate-700">
-                      Transporte (Punto VIII) y Anexo I
-                    </span>
-                    <label className="flex items-center gap-2 text-xs text-slate-700">
-                      <input
-                        type="checkbox"
-                        disabled={isArchived}
-                        checked={contract.transportChecked}
-                        onChange={(e) => updateField('transportChecked', e.target.checked)}
-                        className="rounded border-slate-300 text-blue-700"
-                      />
-                      <span>{contract.transportCheckboxLabel}</span>
-                    </label>
-                    <div>
-                      <label htmlFor="ctr-anexo-trans" className="block text-xs font-medium text-slate-700 mb-1">
-                        Detalle Transporte (Anexo I - A)
-                      </label>
-                      <input
-                        id="ctr-anexo-trans"
-                        type="text"
-                        disabled={isArchived}
-                        value={contract.anexoTransportDetail}
-                        onChange={(e) => updateField('anexoTransportDetail', e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg"
-                      />
-                    </div>
+                    {renderTransportFlightsBlock(true)}
                     <div>
                       <label htmlFor="ctr-anexo-aloj" className="block text-xs font-medium text-slate-700 mb-1">
                         Detalle Alojamiento (Anexo I - C)

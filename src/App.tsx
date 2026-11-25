@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
 import {
+  createOrUpdateSignatureRequestRemote,
   deleteAccessUserRemote,
   deleteClientRemote,
   deleteContractRemote,
@@ -28,6 +29,7 @@ import {
   subscribeAgencyProfile,
   subscribeClients,
   subscribeContracts,
+  subscribeSignatureRequests,
   subscribeTemplates,
   upsertAccessUserRemote,
   upsertClientRemote,
@@ -51,18 +53,22 @@ import type {
   TravelContract,
   TripTemplate,
 } from './types/contract';
-import { getRolePermissions, verifyPassword } from './utils/authCrypto';
+import { getRolePermissions } from './utils/authCrypto';
 import {
   buildCanonicalUrl,
+  buildClientSignatureUrl,
   createContractFromTemplate,
+  encodeSigningEnvelope,
   formatFirestoreErrorForUser,
   formatSpanishLongDate,
   generateNextContractNumber,
+  generateSignatureRequestIds,
   normalizeAgencyProfile,
   normalizeClient,
   normalizeContract,
+  normalizePublicationDomain,
   normalizeTemplate,
-  normalizeUsername,
+  parseClientSignatureParams,
   type TravelerRole,
 } from './utils/contractLogic';
 import { ContractsListView } from './components/ContractsListView';
@@ -70,10 +76,11 @@ import { ContractEditorView } from './components/ContractEditorView';
 import { TemplatesView } from './components/TemplatesView';
 import { ClientsView } from './components/ClientsView';
 import { UsersView } from './components/UsersView';
-import { LoginScreen } from './components/LoginScreen';
 import { NewContractModal } from './components/NewContractModal';
 import { AgencySettingsModal } from './components/AgencySettingsModal';
 import { DomainPublishModal } from './components/DomainPublishModal';
+import { SendForSignatureModal } from './components/SendForSignatureModal';
+import { ClientSigningView } from './components/ClientSigningView';
 import { DiverTriangleLogo } from './components/AgencyBrandMarks';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -137,6 +144,16 @@ function writeSessionStorage(session: ActiveSession | null): void {
   }
 }
 
+const DEFAULT_PRIMARY_USER = SEED_ACCESS_USERS[0];
+const DEFAULT_OPEN_SESSION: ActiveSession = {
+  userId: DEFAULT_PRIMARY_USER.id,
+  username: DEFAULT_PRIMARY_USER.username,
+  displayName: DEFAULT_PRIMARY_USER.displayName,
+  email: DEFAULT_PRIMARY_USER.email,
+  role: 'admin',
+  authSource: 'local-user',
+};
+
 function mergeWithPrimaryAdmin(list: AccessUser[]): AccessUser[] {
   const primarySeed = SEED_ACCESS_USERS[0];
   const hasPrimary = list.some((u) => u.id === primarySeed.id || u.isPrimary);
@@ -154,7 +171,7 @@ function WorkspaceApp() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [session, setSession] = useState<ActiveSession | null>(() => readSessionStorage());
+  const [session, setSession] = useState<ActiveSession>(() => readSessionStorage() ?? DEFAULT_OPEN_SESSION);
 
   const [activeTab, setActiveTab] = useState<NavTab>('contracts');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -192,11 +209,20 @@ function WorkspaceApp() {
   const [agencyModalOpen, setAgencyModalOpen] = useState(false);
   const [domainModalOpen, setDomainModalOpen] = useState(false);
 
+  const [signModalContractId, setSignModalContractId] = useState<string | null>(null);
+  const [signModalUrl, setSignModalUrl] = useState('');
+  const [signModalProdUrl, setSignModalProdUrl] = useState<string | null>(null);
+  const [signModalPreparing, setSignModalPreparing] = useState(false);
+  const [signModalError, setSignModalError] = useState<string | null>(null);
+
   const [saveState, setSaveState] = useState<SaveSyncState>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
+  const contractsRef = useRef(contracts);
+  contractsRef.current = contracts;
+  const syncedRemoteSigRef = useRef<Set<string>>(new Set());
 
   // Firebase Auth listener
   useEffect(() => {
@@ -211,21 +237,16 @@ function WorkspaceApp() {
         setUser(currentUser);
         setAuthReady(true);
         if (currentUser) {
-          setSession((prev) => {
-            if (prev && prev.authSource === 'local-user') {
-              return prev;
-            }
-            const nextGoogleSession: ActiveSession = {
-              userId: currentUser.uid,
-              username: currentUser.email?.split('@')[0] || 'google',
-              displayName: currentUser.displayName || currentUser.email || 'Administrador',
-              email: currentUser.email || '',
-              role: 'admin',
-              authSource: 'google',
-            };
-            writeSessionStorage(nextGoogleSession);
-            return nextGoogleSession;
-          });
+          const nextGoogleSession: ActiveSession = {
+            userId: currentUser.uid,
+            username: currentUser.email?.split('@')[0] || 'google',
+            displayName: currentUser.displayName || currentUser.email || 'Administrador',
+            email: currentUser.email || '',
+            role: 'admin',
+            authSource: 'google',
+          };
+          writeSessionStorage(nextGoogleSession);
+          setSession(nextGoogleSession);
           try {
             await ensureUserWorkspaceSeeded(currentUser.uid);
           } catch (err) {
@@ -257,6 +278,40 @@ function WorkspaceApp() {
     const unsubAccessUsers = subscribeAccessUsers(uid, (remoteUsers) => {
       setAccessUsers(mergeWithPrimaryAdmin(remoteUsers));
     });
+    const unsubSignatureRequests = subscribeSignatureRequests(uid, (sigRequests) => {
+      for (const req of sigRequests) {
+        if (req.status !== 'signed' || !req.clientSignatureDataUrl) continue;
+        const syncKey = `${req.contractId}:${req.clientSignedAt}:${req.agencyCopySentAt || ''}`;
+        if (syncedRemoteSigRef.current.has(syncKey)) continue;
+        const target = contractsRef.current.find((c) => c.id === req.contractId);
+        if (!target || target.status === 'archived') continue;
+        if (
+          target.clientSignatureDataUrl === req.clientSignatureDataUrl &&
+          target.status === 'signed' &&
+          (target.agencyCopySentAt || '') === (req.agencyCopySentAt || '')
+        ) {
+          syncedRemoteSigRef.current.add(syncKey);
+          continue;
+        }
+        syncedRemoteSigRef.current.add(syncKey);
+        const signedContract: TravelContract = {
+          ...target,
+          status: 'signed',
+          clientSignatureDataUrl: req.clientSignatureDataUrl,
+          clientSignerName: req.clientSignerName || target.clientFullName,
+          clientSignedAt: req.clientSignedAt,
+          signatureRequestId: req.id,
+          agencyCopySentAt: req.agencyCopySentAt || target.agencyCopySentAt || '',
+          agencyCopyEmail: req.agencyCopyEmail || target.agencyCopyEmail || '',
+        };
+        setContracts((prev) =>
+          prev.map((c) => (c.id === signedContract.id ? signedContract : c))
+        );
+        void upsertContractRemote(uid, signedContract, false).catch((err) => {
+          console.error(err);
+        });
+      }
+    });
 
     return () => {
       unsubAgency();
@@ -264,6 +319,7 @@ function WorkspaceApp() {
       unsubTemplates();
       unsubContracts();
       unsubAccessUsers();
+      unsubSignatureRequests();
     };
   }, [authReady, user]);
 
@@ -340,40 +396,6 @@ function WorkspaceApp() {
     [contracts]
   );
 
-  const handlePasswordLogin = async (
-    rawUsername: string,
-    password: string
-  ): Promise<string | null> => {
-    const normalized = normalizeUsername(rawUsername);
-    const candidate = accessUsers.find(
-      (item) => normalizeUsername(item.username) === normalized
-    );
-    if (!candidate) {
-      return 'Usuario o contraseña incorrectos.';
-    }
-    if (!candidate.active) {
-      return 'Esta cuenta de usuario está desactivada. Contacta con el administrador principal.';
-    }
-    const valid = await verifyPassword(password, candidate.passwordHash);
-    if (!valid) {
-      return 'Usuario o contraseña incorrectos.';
-    }
-
-    const nextSession: ActiveSession = {
-      userId: candidate.id,
-      username: candidate.username,
-      displayName: candidate.displayName,
-      email: candidate.email,
-      role: candidate.role,
-      authSource: 'local-user',
-    };
-    writeSessionStorage(nextSession);
-    setSession(nextSession);
-    setActiveTab('contracts');
-    setActiveContractId(null);
-    return null;
-  };
-
   const handleSignIn = async () => {
     setAuthError(null);
     try {
@@ -402,8 +424,8 @@ function WorkspaceApp() {
       window.clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    writeSessionStorage(null);
-    setSession(null);
+    writeSessionStorage(DEFAULT_OPEN_SESSION);
+    setSession(DEFAULT_OPEN_SESSION);
     if (user) {
       await signOut(auth);
     }
@@ -466,12 +488,99 @@ function WorkspaceApp() {
     setRemoteError(null);
   };
 
+  const handleOpenSendForSignature = async (targetContract: TravelContract) => {
+    if (!permissions.canEditContracts) return;
+    setSignModalError(null);
+    setSignModalPreparing(true);
+    setSignModalContractId(targetContract.id);
+    setSignModalUrl('');
+    setSignModalProdUrl(null);
+
+    try {
+      const existingSigId = targetContract.signatureRequestId?.trim() || '';
+      const hasValidRemoteId = existingSigId.startsWith('sig_') && existingSigId.length >= 20;
+      const generated = generateSignatureRequestIds();
+      const requestId = user
+        ? hasValidRemoteId
+          ? existingSigId
+          : generated.requestId
+        : existingSigId || `local_${generated.requestId.slice(4)}`;
+
+      const nextStatus = targetContract.clientSignatureDataUrl
+        ? 'signed'
+        : targetContract.status === 'draft'
+          ? 'sent'
+          : targetContract.status;
+
+      const updatedContract: TravelContract = {
+        ...targetContract,
+        status: nextStatus,
+        signatureRequestId: requestId,
+      };
+
+      setContracts((prev) =>
+        prev.map((c) => (c.id === updatedContract.id ? updatedContract : c))
+      );
+
+      if (user) {
+        if (autoSaveTimerRef.current) {
+          window.clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = null;
+        }
+        await upsertContractRemote(user.uid, updatedContract, false);
+        await createOrUpdateSignatureRequestRemote({
+          uid: user.uid,
+          requestId,
+          accessToken: generated.accessToken,
+          contract: updatedContract,
+          agency,
+          isExistingRequest: hasValidRemoteId,
+        });
+        setSaveState('saved');
+        setLastSavedAt(formatTimeNow());
+      }
+
+      const envelope = await encodeSigningEnvelope({
+        contract: updatedContract,
+        agency,
+      });
+
+      const activeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
+      const activeUrl = buildClientSignatureUrl({
+        baseOrigin: activeOrigin,
+        basePath: activePath,
+        requestId,
+        envelope,
+      });
+      setSignModalUrl(activeUrl);
+
+      const cleanDomain = normalizePublicationDomain(agency.publicDomain ?? '');
+      if (cleanDomain && typeof window !== 'undefined' && cleanDomain !== window.location.host) {
+        setSignModalProdUrl(
+          buildClientSignatureUrl({
+            baseOrigin: `https://${cleanDomain}`,
+            basePath: '/',
+            requestId,
+            envelope,
+          })
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setSignModalError(formatFirestoreErrorForUser(err));
+    } finally {
+      setSignModalPreparing(false);
+    }
+  };
+
   const handleCreateContract = async (params: {
     templateId: string;
     client: Client;
     isNewClient: boolean;
     contractNumber: string;
     travelerRole: TravelerRole;
+    openSignatureFlow?: boolean;
   }) => {
     if (!permissions.canEditContracts) {
       throw new Error('Tu usuario no tiene permisos para crear contratos.');
@@ -534,6 +643,9 @@ function WorkspaceApp() {
         setSaveState('saved');
         setLastSavedAt(formatTimeNow());
         setRemoteError(null);
+        if (params.openSignatureFlow) {
+          void handleOpenSendForSignature(created);
+        }
       } catch (err) {
         console.error(err);
         setSaveState('error');
@@ -551,6 +663,9 @@ function WorkspaceApp() {
       setActiveContractId(created.id);
       setSaveState('local');
       setLastSavedAt(formatTimeNow());
+      if (params.openSignatureFlow) {
+        void handleOpenSendForSignature(created);
+      }
     }
   };
 
@@ -775,25 +890,6 @@ function WorkspaceApp() {
     setNewModalOpen(true);
   };
 
-  if (!authReady && !session) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="text-sm font-medium text-slate-500">Cargando acceso seguro...</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <LoginScreen
-        agencyName={agency.commercialName}
-        onPasswordLogin={handlePasswordLogin}
-        onGoogleLogin={handleSignIn}
-        googleError={authError}
-      />
-    );
-  }
-
   const currentBreadcrumb = activeContract
     ? `Contratos / ${activeContract.contractNumber}`
     : activeTab === 'contracts'
@@ -815,7 +911,7 @@ function WorkspaceApp() {
         <div>
           <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
-              <DiverTriangleLogo className="w-8 h-7 shrink-0" />
+              <DiverTriangleLogo className="w-9 h-9 shrink-0" />
               <span className="text-sm font-bold tracking-tight text-slate-900 truncate">
                 {agency.commercialName}
               </span>
@@ -985,7 +1081,7 @@ function WorkspaceApp() {
             </div>
           </div>
 
-          {!user && permissions.canManageUsers && (
+          {!user ? (
             <>
               {authError && <p className="text-xs text-red-600">{authError}</p>}
               <button
@@ -997,16 +1093,16 @@ function WorkspaceApp() {
                 Conectar con Google
               </button>
             </>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+              Desconectar de Google
+            </button>
           )}
-
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap"
-          >
-            <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-            Cerrar sesión
-          </button>
         </div>
       </aside>
 
@@ -1088,6 +1184,14 @@ function WorkspaceApp() {
               lastSavedAt={lastSavedAt}
               remoteError={remoteError}
               onChange={handleContractEdit}
+              onUpdateAgency={permissions.canManageAgency ? handleSaveAgency : undefined}
+              onSendForSignature={
+                permissions.canEditContracts
+                  ? () => {
+                      void handleOpenSendForSignature(activeContract);
+                    }
+                  : undefined
+              }
               onBack={() => setActiveContractId(null)}
             />
           ) : activeTab === 'contracts' ? (
@@ -1151,14 +1255,62 @@ function WorkspaceApp() {
         onClose={() => setDomainModalOpen(false)}
         onSaveDomain={handleSaveDomain}
       />
+
+      {(() => {
+        const signModalContract =
+          contracts.find((c) => c.id === signModalContractId) || null;
+        if (!signModalContract) return null;
+        const matchedClient = clients.find((c) => c.id === signModalContract.clientId);
+        return (
+          <SendForSignatureModal
+            open={Boolean(signModalContractId)}
+            contract={signModalContract}
+            agency={agency}
+            clientEmail={matchedClient?.email ?? ''}
+            clientPhone={matchedClient?.phone ?? ''}
+            signingUrl={signModalUrl}
+            productionUrl={signModalProdUrl}
+            preparing={signModalPreparing}
+            error={signModalError}
+            onClose={() => {
+              setSignModalContractId(null);
+              setSignModalError(null);
+            }}
+            onOpenClientView={(url) => {
+              setSignModalContractId(null);
+              window.history.pushState({}, '', url);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
 
 export default function App() {
+  const [signingParams, setSigningParams] = useState(() =>
+    typeof window !== 'undefined' ? parseClientSignatureParams(window.location.search) : null
+  );
+
+  useEffect(() => {
+    const syncParams = () => {
+      setSigningParams(parseClientSignatureParams(window.location.search));
+    };
+    window.addEventListener('popstate', syncParams);
+    return () => window.removeEventListener('popstate', syncParams);
+  }, []);
+
   return (
     <ErrorBoundary>
-      <WorkspaceApp />
+      {signingParams ? (
+        <ClientSigningView
+          requestId={signingParams.requestId}
+          envelope={signingParams.envelope}
+        />
+      ) : (
+        <WorkspaceApp />
+      )}
     </ErrorBoundary>
   );
 }

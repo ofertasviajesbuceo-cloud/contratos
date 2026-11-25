@@ -58,7 +58,8 @@ service cloud.firestore {
       ]) && data.keys().hasOnly([
         'ownerId', 'commercialName', 'legalHolderName', 'cif', 'licenseNote',
         'addressLine1', 'addressLine2', 'phone', 'email', 'iban', 'bic',
-        'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain', 'createdAt', 'updatedAt'
+        'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain',
+        'insurancePolicies', 'createdAt', 'updatedAt'
       ]) &&
       isValidId(data.ownerId) &&
       data.ownerId == request.auth.uid &&
@@ -79,6 +80,7 @@ service cloud.firestore {
         isStr(data.publicDomain, 0, 253) &&
         data.publicDomain.matches('^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+)?$')
       )) &&
+      (!('insurancePolicies' in data) || isMapList(data.insurancePolicies, 20)) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
@@ -122,6 +124,7 @@ service cloud.firestore {
         'priceSummaryText', 'bankConceptPrefix', 'minGroupSize', 'cancellationNoticeDays',
         'itineraryDays', 'destinationPayments', 'optionalServices',
         'transportIncluded', 'transportSummary', 'transportCheckboxLabel',
+        'flightDetails', 'flightPrice', 'flightPaymentMode',
         'insuranceBasicLabel', 'insuranceBasicPrice',
         'insuranceCancellationLabel', 'insuranceCancellationPrice',
         'maeDestinationUrl', 'anexoTransportDetail', 'anexoManagementDetail',
@@ -147,6 +150,9 @@ service cloud.firestore {
       data.transportIncluded is bool &&
       isStr(data.transportSummary, 1, 300) &&
       isStr(data.transportCheckboxLabel, 1, 250) &&
+      (!('flightDetails' in data) || isStr(data.flightDetails, 0, 600)) &&
+      (!('flightPrice' in data) || isNum(data.flightPrice, 0, 100000)) &&
+      (!('flightPaymentMode' in data) || data.flightPaymentMode in ['first_installment', 'prorated']) &&
       isStr(data.insuranceBasicLabel, 1, 500) &&
       isNum(data.insuranceBasicPrice, 0, 10000) &&
       isStr(data.insuranceCancellationLabel, 1, 300) &&
@@ -178,7 +184,8 @@ service cloud.firestore {
         'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
         'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
         'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
-        'generalConditionsDate', 'imageAuthorization', 'createdAt', 'updatedAt'
+        'generalConditionsDate', 'imageAuthorization',
+        'createdAt', 'updatedAt'
       ]) && data.keys().hasOnly([
         'ownerId', 'contractNumber', 'contractDateText', 'status',
         'templateId', 'templateName', 'clientId', 'clientFullName', 'clientDni',
@@ -188,13 +195,18 @@ service cloud.firestore {
         'minGroupSize', 'cancellationNoticeDays', 'clientSpecialRequest',
         'itineraryDays', 'destinationPayments', 'optionalServices',
         'transportIncluded', 'transportSummary', 'transportCheckboxLabel', 'transportChecked',
+        'flightDetails', 'flightPrice', 'flightPaymentMode',
         'insuranceBasicSelected', 'insuranceBasicLabel', 'insuranceBasicPrice',
         'insuranceCancellationSelected', 'insuranceCancellationLabel', 'insuranceCancellationPrice',
+        'insurancePolicyNumber', 'insuranceCertificateNumber',
         'declineAssistanceInsurance', 'declineCancellationInsurance',
-        'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
+        'maeDestinationUrl', 'conceptLines', 'installmentCount', 'installmentIntro', 'installmentLines',
         'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
         'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
-        'generalConditionsDate', 'imageAuthorization', 'createdAt', 'updatedAt'
+        'generalConditionsDate', 'imageAuthorization',
+        'clientSignatureDataUrl', 'clientSignerName', 'clientSignedAt', 'signatureRequestId',
+        'agencyCopySentAt', 'agencyCopyEmail',
+        'createdAt', 'updatedAt'
       ]) &&
       isValidId(data.ownerId) &&
       data.ownerId == request.auth.uid &&
@@ -229,18 +241,24 @@ service cloud.firestore {
       isStr(data.transportSummary, 1, 300) &&
       isStr(data.transportCheckboxLabel, 1, 250) &&
       data.transportChecked is bool &&
+      (!('flightDetails' in data) || isStr(data.flightDetails, 0, 600)) &&
+      (!('flightPrice' in data) || isNum(data.flightPrice, 0, 100000)) &&
+      (!('flightPaymentMode' in data) || data.flightPaymentMode in ['first_installment', 'prorated']) &&
       data.insuranceBasicSelected is bool &&
       isStr(data.insuranceBasicLabel, 1, 500) &&
       isNum(data.insuranceBasicPrice, 0, 10000) &&
       data.insuranceCancellationSelected is bool &&
       isStr(data.insuranceCancellationLabel, 1, 300) &&
       isNum(data.insuranceCancellationPrice, 0, 10000) &&
+      (!('insurancePolicyNumber' in data) || isStr(data.insurancePolicyNumber, 0, 80)) &&
+      (!('insuranceCertificateNumber' in data) || isStr(data.insuranceCertificateNumber, 0, 80)) &&
       data.declineAssistanceInsurance is bool &&
       data.declineCancellationInsurance is bool &&
       isStr(data.maeDestinationUrl, 1, 300) &&
       isMapList(data.conceptLines, 20) &&
+      (!('installmentCount' in data) || data.installmentCount in [1, 2, 3, 4, 5, 6]) &&
       isStr(data.installmentIntro, 1, 350) &&
-      isMapList(data.installmentLines, 10) &&
+      isMapList(data.installmentLines, 25) &&
       isNum(data.totalAmount, 0, 1000000) &&
       isStr(data.anexoTransportDetail, 1, 200) &&
       isStr(data.anexoManagementDetail, 1, 200) &&
@@ -249,6 +267,12 @@ service cloud.firestore {
       isStringList(data.anexoHealthContacts, 10) &&
       isStr(data.generalConditionsDate, 2, 60) &&
       data.imageAuthorization in ['authorized', 'declined'] &&
+      (!('clientSignatureDataUrl' in data) || isStr(data.clientSignatureDataUrl, 0, 60000)) &&
+      (!('clientSignerName' in data) || isStr(data.clientSignerName, 0, 150)) &&
+      (!('clientSignedAt' in data) || isStr(data.clientSignedAt, 0, 80)) &&
+      (!('signatureRequestId' in data) || isStr(data.signatureRequestId, 0, 128)) &&
+      (!('agencyCopySentAt' in data) || isStr(data.agencyCopySentAt, 0, 80)) &&
+      (!('agencyCopyEmail' in data) || isStr(data.agencyCopyEmail, 0, 120)) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
@@ -275,6 +299,33 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
+    function isValidSignatureRequest(data) {
+      return data.keys().hasAll([
+        'ownerId', 'contractId', 'contractNumber', 'accessToken', 'status',
+        'contractData', 'agencyData', 'clientSignatureDataUrl',
+        'clientSignerName', 'clientSignedAt', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasOnly([
+        'ownerId', 'contractId', 'contractNumber', 'accessToken', 'status',
+        'contractData', 'agencyData', 'clientSignatureDataUrl',
+        'clientSignerName', 'clientSignedAt', 'agencyCopySentAt', 'agencyCopyEmail',
+        'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      isValidId(data.contractId) &&
+      isStr(data.contractNumber, 2, 40) &&
+      isStr(data.accessToken, 16, 80) &&
+      data.status in ['pending', 'signed'] &&
+      data.contractData is map &&
+      data.agencyData is map &&
+      isStr(data.clientSignatureDataUrl, 0, 60000) &&
+      isStr(data.clientSignerName, 0, 150) &&
+      isStr(data.clientSignedAt, 0, 80) &&
+      (!('agencyCopySentAt' in data) || isStr(data.agencyCopySentAt, 0, 80)) &&
+      (!('agencyCopyEmail' in data) || isStr(data.agencyCopyEmail, 0, 120)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     match /agencyProfiles/{userId} {
@@ -294,7 +345,8 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly([
           'commercialName', 'legalHolderName', 'cif', 'licenseNote',
           'addressLine1', 'addressLine2', 'phone', 'email', 'iban', 'bic',
-          'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain', 'updatedAt'
+          'bankBeneficiary', 'footerText', 'jurisdictionCity', 'publicDomain',
+          'insurancePolicies', 'updatedAt'
         ]);
       allow delete: if false;
     }
@@ -342,6 +394,7 @@ service cloud.firestore {
           'priceSummaryText', 'bankConceptPrefix', 'minGroupSize', 'cancellationNoticeDays',
           'itineraryDays', 'destinationPayments', 'optionalServices',
           'transportIncluded', 'transportSummary', 'transportCheckboxLabel',
+          'flightDetails', 'flightPrice', 'flightPaymentMode',
           'insuranceBasicLabel', 'insuranceBasicPrice',
           'insuranceCancellationLabel', 'insuranceCancellationPrice',
           'maeDestinationUrl', 'anexoTransportDetail', 'anexoManagementDetail',
@@ -378,13 +431,18 @@ service cloud.firestore {
             'minGroupSize', 'cancellationNoticeDays', 'clientSpecialRequest',
             'itineraryDays', 'destinationPayments', 'optionalServices',
             'transportIncluded', 'transportSummary', 'transportCheckboxLabel', 'transportChecked',
+            'flightDetails', 'flightPrice', 'flightPaymentMode',
             'insuranceBasicSelected', 'insuranceBasicLabel', 'insuranceBasicPrice',
             'insuranceCancellationSelected', 'insuranceCancellationLabel', 'insuranceCancellationPrice',
+            'insurancePolicyNumber', 'insuranceCertificateNumber',
             'declineAssistanceInsurance', 'declineCancellationInsurance',
-            'maeDestinationUrl', 'conceptLines', 'installmentIntro', 'installmentLines',
+            'maeDestinationUrl', 'conceptLines', 'installmentCount', 'installmentIntro', 'installmentLines',
             'totalAmount', 'anexoTransportDetail', 'anexoManagementDetail',
             'anexoAccommodationDetail', 'anexoIncludedServices', 'anexoHealthContacts',
-            'generalConditionsDate', 'imageAuthorization', 'updatedAt'
+            'generalConditionsDate', 'imageAuthorization',
+            'clientSignatureDataUrl', 'clientSignerName', 'clientSignedAt', 'signatureRequestId',
+            'agencyCopySentAt', 'agencyCopyEmail',
+            'updatedAt'
           ]) ||
           // Action: Update workflow status only
           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
@@ -416,6 +474,68 @@ service cloud.firestore {
         isVerified() &&
         existing().ownerId == request.auth.uid &&
         existing().isPrimary == false;
+    }
+
+    match /signatureRequests/{requestId} {
+      allow get: if isValidId(requestId) && (
+        (isVerified() && (
+          (resource == null && requestId.size() >= 20) ||
+          (resource != null && existing().ownerId == request.auth.uid)
+        )) ||
+        (requestId.size() >= 20 && resource != null && existing().status in ['pending', 'signed'])
+      );
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+      allow create: if isValidId(requestId) &&
+        requestId.size() >= 20 &&
+        isVerified() &&
+        isValidSignatureRequest(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(requestId) &&
+        isValidSignatureRequest(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().contractId == existing().contractId &&
+        incoming().accessToken == existing().accessToken &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isVerified() &&
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'contractNumber', 'status', 'contractData', 'agencyData',
+              'clientSignatureDataUrl', 'clientSignerName', 'clientSignedAt',
+              'agencyCopySentAt', 'agencyCopyEmail', 'updatedAt'
+            ])
+          ) ||
+          (
+            requestId.size() >= 20 &&
+            existing().status == 'pending' &&
+            incoming().status == 'signed' &&
+            isStr(incoming().clientSignatureDataUrl, 32, 60000) &&
+            isStr(incoming().clientSignerName, 2, 150) &&
+            isStr(incoming().clientSignedAt, 4, 80) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'clientSignatureDataUrl', 'clientSignerName', 'clientSignedAt', 'updatedAt'
+            ])
+          ) ||
+          (
+            requestId.size() >= 20 &&
+            existing().status == 'signed' &&
+            incoming().status == 'signed' &&
+            (!('agencyCopySentAt' in existing()) || existing().agencyCopySentAt == '') &&
+            isStr(incoming().agencyCopySentAt, 4, 80) &&
+            (!('agencyCopyEmail' in incoming()) || isStr(incoming().agencyCopyEmail, 0, 120)) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'agencyCopySentAt', 'agencyCopyEmail', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(requestId) &&
+        isVerified() &&
+        existing().ownerId == request.auth.uid;
     }
   }
 }

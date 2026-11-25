@@ -82,6 +82,10 @@
           "maxLength": 253,
           "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+)?$"
         },
+        "insurancePolicies": {
+          "type": "array",
+          "description": "Listado de pólizas de seguro configuradas (máximo 20)"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -259,6 +263,18 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 250
+        },
+        "flightDetails": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 600
+        },
+        "flightPrice": {
+          "type": "number"
+        },
+        "flightPaymentMode": {
+          "type": "string",
+          "enum": ["first_installment", "prorated"]
         },
         "insuranceBasicLabel": {
           "type": "string",
@@ -497,6 +513,18 @@
         "transportChecked": {
           "type": "boolean"
         },
+        "flightDetails": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 600
+        },
+        "flightPrice": {
+          "type": "number"
+        },
+        "flightPaymentMode": {
+          "type": "string",
+          "enum": ["first_installment", "prorated"]
+        },
         "insuranceBasicSelected": {
           "type": "boolean"
         },
@@ -519,6 +547,16 @@
         "insuranceCancellationPrice": {
           "type": "number"
         },
+        "insurancePolicyNumber": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "insuranceCertificateNumber": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
         "declineAssistanceInsurance": {
           "type": "boolean"
         },
@@ -534,6 +572,10 @@
           "type": "array",
           "description": "Líneas de resumen económico del Punto XIV (máximo 20)"
         },
+        "installmentCount": {
+          "type": "number",
+          "description": "Número de plazos de pago del Punto XIV (1, 2, 3, 4, 5 o 6)"
+        },
         "installmentIntro": {
           "type": "string",
           "minLength": 1,
@@ -541,7 +583,7 @@
         },
         "installmentLines": {
           "type": "array",
-          "description": "Plazos de pago del Punto XIV (máximo 10)"
+          "description": "Plazos de pago del Punto XIV (máximo 25)"
         },
         "totalAmount": {
           "type": "number"
@@ -577,6 +619,36 @@
         "imageAuthorization": {
           "type": "string",
           "enum": ["authorized", "declined"]
+        },
+        "clientSignatureDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60000
+        },
+        "clientSignerName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150
+        },
+        "clientSignedAt": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "signatureRequestId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "agencyCopySentAt": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "agencyCopyEmail": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
         },
         "createdAt": {
           "type": "string",
@@ -706,6 +778,94 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "SignatureRequest": {
+      "title": "SignatureRequest",
+      "description": "Solicitud de firma remota por enlace para que el cliente firme el contrato en las páginas 3, 4, 6 y 7.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "contractNumber": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "accessToken": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "signed"]
+        },
+        "contractData": {
+          "type": "object",
+          "description": "Instantánea de datos del contrato para mostrar al cliente."
+        },
+        "agencyData": {
+          "type": "object",
+          "description": "Datos públicos de la agencia mostrados en el contrato."
+        },
+        "clientSignatureDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60000
+        },
+        "clientSignerName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150
+        },
+        "clientSignedAt": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "agencyCopySentAt": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "agencyCopyEmail": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "contractId",
+        "contractNumber",
+        "accessToken",
+        "status",
+        "contractData",
+        "agencyData",
+        "clientSignatureDataUrl",
+        "clientSignerName",
+        "clientSignedAt",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -738,6 +898,12 @@
         "$ref": "#/entities/AccessUser"
       },
       "description": "Usuarios de acceso al workspace de la agencia aislados por ownerId."
+    },
+    "/signatureRequests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/SignatureRequest"
+      },
+      "description": "Solicitudes de firma remota por enlace único para clientes."
     }
   }
 }

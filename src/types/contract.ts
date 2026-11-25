@@ -1,5 +1,7 @@
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'archived';
 export type ImageAuthorization = 'authorized' | 'declined';
+export type InstallmentCount = 1 | 2 | 3 | 4 | 5 | 6;
+export type FlightPaymentMode = 'first_installment' | 'prorated';
 
 export interface ItineraryDay {
   title: string;
@@ -26,6 +28,22 @@ export interface InstallmentLine {
   amount: number;
 }
 
+export interface InstallmentStage {
+  id: string;
+  title: string;
+  dueLabel: string;
+  introText: string;
+  lines: InstallmentLine[];
+  subtotal: number;
+}
+
+export interface InsurancePolicyOption {
+  id: string;
+  insurer: string;
+  policyNumber: string;
+  name: string;
+}
+
 export interface AgencyProfile {
   id?: string;
   ownerId: string;
@@ -43,6 +61,7 @@ export interface AgencyProfile {
   footerText: string;
   jurisdictionCity: string;
   publicDomain?: string;
+  insurancePolicies?: InsurancePolicyOption[];
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -81,6 +100,9 @@ export interface TripTemplate {
   transportIncluded: boolean;
   transportSummary: string;
   transportCheckboxLabel: string;
+  flightDetails?: string;
+  flightPrice?: number;
+  flightPaymentMode?: FlightPaymentMode;
   insuranceBasicLabel: string;
   insuranceBasicPrice: number;
   insuranceCancellationLabel: string;
@@ -129,16 +151,22 @@ export interface TravelContract {
   transportSummary: string;
   transportCheckboxLabel: string;
   transportChecked: boolean;
+  flightDetails?: string;
+  flightPrice?: number;
+  flightPaymentMode?: FlightPaymentMode;
   insuranceBasicSelected: boolean;
   insuranceBasicLabel: string;
   insuranceBasicPrice: number;
   insuranceCancellationSelected: boolean;
   insuranceCancellationLabel: string;
   insuranceCancellationPrice: number;
+  insurancePolicyNumber?: string;
+  insuranceCertificateNumber?: string;
   declineAssistanceInsurance: boolean;
   declineCancellationInsurance: boolean;
   maeDestinationUrl: string;
   conceptLines: ConceptLine[];
+  installmentCount?: InstallmentCount;
   installmentIntro: string;
   installmentLines: InstallmentLine[];
   totalAmount: number;
@@ -149,6 +177,44 @@ export interface TravelContract {
   anexoHealthContacts: string[];
   generalConditionsDate: string;
   imageAuthorization: ImageAuthorization;
+  clientSignatureDataUrl?: string;
+  clientSignerName?: string;
+  clientSignedAt?: string;
+  signatureRequestId?: string;
+  agencyCopySentAt?: string;
+  agencyCopyEmail?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface SignatureRequest {
+  id: string;
+  ownerId: string;
+  contractId: string;
+  contractNumber: string;
+  accessToken: string;
+  status: 'pending' | 'signed';
+  contractData: Record<string, unknown>;
+  agencyData: {
+    commercialName: string;
+    legalHolderName: string;
+    cif: string;
+    licenseNote: string;
+    addressLine1: string;
+    addressLine2: string;
+    phone: string;
+    email: string;
+    iban: string;
+    bic: string;
+    bankBeneficiary: string;
+    footerText: string;
+    jurisdictionCity: string;
+  };
+  clientSignatureDataUrl: string;
+  clientSignerName: string;
+  clientSignedAt: string;
+  agencyCopySentAt?: string;
+  agencyCopyEmail?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }

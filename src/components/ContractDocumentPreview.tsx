@@ -1,6 +1,13 @@
 import React from 'react';
 import type { AgencyProfile, TravelContract } from '../types/contract';
-import { formatEuro, formatEuroCompact } from '../utils/contractLogic';
+import {
+  buildInstallmentSchedule,
+  formatEuro,
+  formatEuroCompact,
+  formatInsuranceLabelWithPolicyAndCert,
+  normalizeFlightPaymentMode,
+  normalizeInsurancePolicies,
+} from '../utils/contractLogic';
 import {
   AgencyStampMark,
   DocumentWaveFooter,
@@ -10,6 +17,8 @@ import {
 interface ContractDocumentPreviewProps {
   contract: TravelContract;
   agency: AgencyProfile;
+  interactiveSignature?: boolean;
+  onRequestSign?: (pageNumber: 3 | 4 | 6 | 7) => void;
 }
 
 function CheckboxGlyph({ checked }: { checked: boolean }) {
@@ -20,14 +29,61 @@ function CheckboxGlyph({ checked }: { checked: boolean }) {
   );
 }
 
-function SignatureRow({ agencyLeft = true }: { agencyLeft?: boolean }) {
+function SignatureRow({
+  agencyLeft = true,
+  pageNumber,
+  signatureDataUrl,
+  signedAt,
+  interactiveSignature = false,
+  onRequestSign,
+  compact = false,
+}: {
+  agencyLeft?: boolean;
+  pageNumber: 3 | 4 | 6 | 7;
+  signatureDataUrl?: string;
+  signedAt?: string;
+  interactiveSignature?: boolean;
+  onRequestSign?: (pageNumber: 3 | 4 | 6 | 7) => void;
+  compact?: boolean;
+}) {
+  const hasClientSig = Boolean(signatureDataUrl && signatureDataUrl.trim().length > 0);
+
   return (
-    <div className="mt-6 grid grid-cols-2 items-end gap-8 pt-2">
+    <div className={`${compact ? 'mt-2 pt-1' : 'mt-6 pt-2'} grid grid-cols-2 items-end gap-8`}>
       <div className="flex flex-col items-center justify-end">
-        {agencyLeft && <AgencyStampMark className="w-[34mm] h-[24mm] -mb-2" />}
+        {agencyLeft && (
+          <AgencyStampMark
+            className={compact ? 'w-[20mm] h-[18mm] mb-1' : 'w-[24mm] h-[22mm] mb-1'}
+          />
+        )}
         <p className="text-[9pt] font-bold tracking-wide text-slate-900 uppercase">AGENCIA</p>
       </div>
       <div className="flex flex-col items-center justify-end">
+        {hasClientSig ? (
+          <div className="flex flex-col items-center justify-end mb-1">
+            <img
+              src={signatureDataUrl}
+              alt="Firma del Contratante Principal"
+              draggable={false}
+              className="h-[17mm] max-w-[54mm] object-contain select-none"
+            />
+            {signedAt ? (
+              <span className="text-[6.5pt] text-slate-600 leading-none mt-0.5 tabular-nums">
+                Firmado: {signedAt}
+              </span>
+            ) : null}
+          </div>
+        ) : interactiveSignature && onRequestSign ? (
+          <button
+            type="button"
+            onClick={() => onRequestSign(pageNumber)}
+            data-sign-slot={pageNumber}
+            className="no-print mb-1 h-[18mm] w-[52mm] border-2 border-dashed border-blue-500 bg-blue-50/70 hover:bg-blue-100/80 text-blue-800 rounded-md flex flex-col items-center justify-center gap-0.5 text-[7.5pt] font-semibold transition-colors cursor-pointer"
+          >
+            <span>Haz clic aquí para firmar</span>
+            <span className="text-[6.5pt] font-normal text-blue-700">Página {pageNumber}</span>
+          </button>
+        ) : null}
         <p className="text-[9pt] font-bold tracking-wide text-slate-900 uppercase">
           CONTRATANTE PRINCIPAL
         </p>
@@ -39,6 +95,8 @@ function SignatureRow({ agencyLeft = true }: { agencyLeft?: boolean }) {
 export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = ({
   contract,
   agency,
+  interactiveSignature = false,
+  onRequestSign,
 }) => {
   const halfItinerary = Math.ceil(contract.itineraryDays.length / 2);
   const leftItinerary = contract.itineraryDays.slice(0, 1);
@@ -47,9 +105,40 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
   const displayLeftDays = useSplitItinerary ? leftItinerary : contract.itineraryDays.slice(0, halfItinerary);
   const displayRightDays = useSplitItinerary ? rightItinerary : contract.itineraryDays.slice(halfItinerary);
 
-  const installmentsTotal = contract.installmentLines.reduce(
-    (sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0),
+  const installmentStages = buildInstallmentSchedule(contract);
+  const hasMultipleInstallments = installmentStages.length > 1;
+  const hasManyInstallments = installmentStages.length >= 4;
+  const installmentsTotal = installmentStages.reduce(
+    (sum, stage) => sum + (Number.isFinite(stage.subtotal) ? stage.subtotal : 0),
     0
+  );
+
+  const flightDetailsText = (contract.flightDetails ?? '').trim();
+  const separateFlightPrice = !contract.transportIncluded
+    ? Math.max(
+        0,
+        Number(
+          contract.conceptLines.find((l) => l.id === 'flights')?.amount ??
+            contract.flightPrice ??
+            0
+        )
+      )
+    : 0;
+  const flightMode = normalizeFlightPaymentMode(contract.flightPaymentMode);
+
+  const anyInsuranceSelected =
+    contract.insuranceBasicSelected || contract.insuranceCancellationSelected;
+  const agencyPolicies = normalizeInsurancePolicies(agency.insurancePolicies);
+  const matchedPolicy = agencyPolicies.find(
+    (p) => p.policyNumber === (contract.insurancePolicyNumber ?? '').trim()
+  );
+  const activePolicyNumber = (contract.insurancePolicyNumber ?? '').trim();
+  const activeCertNumber = (contract.insuranceCertificateNumber ?? '').trim();
+  const displayBasicInsuranceLabel = formatInsuranceLabelWithPolicyAndCert(
+    contract.insuranceBasicLabel,
+    matchedPolicy?.insurer ?? '',
+    activePolicyNumber,
+    activeCertNumber
   );
 
   return (
@@ -245,6 +334,21 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
                   <span className="inline-block w-8">VIII.</span>Transporte
                 </h2>
                 <p className="mb-1.5">{contract.transportSummary}</p>
+                {flightDetailsText && (
+                  <p className="mb-1.5 text-[8pt] text-slate-900 border-l-2 border-[#26549c] pl-2 py-0.5 bg-slate-50/70">
+                    <span className="font-bold">Fechas y datos de vuelos:</span> {flightDetailsText}
+                  </p>
+                )}
+                {!contract.transportIncluded && separateFlightPrice > 0 && (
+                  <p className="mb-1.5 text-[8pt] text-slate-900">
+                    <span className="font-bold">Vuelos aparte (Punto XIV):</span>{' '}
+                    {formatEuro(separateFlightPrice)} (
+                    {flightMode === 'prorated'
+                      ? `prorrateado en ${installmentStages.length} ${installmentStages.length === 1 ? 'plazo' : 'plazos'}`
+                      : 'abono íntegro en el 1º plazo'}
+                    ).
+                  </p>
+                )}
                 <p className="flex items-start">
                   <CheckboxGlyph checked={contract.transportChecked} />
                   <span>{contract.transportCheckboxLabel}</span>
@@ -265,12 +369,22 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
                 <div className="space-y-2">
                   <p className="flex items-start text-justify">
                     <CheckboxGlyph checked={contract.insuranceBasicSelected} />
-                    <span>{contract.insuranceBasicLabel}</span>
+                    <span>{displayBasicInsuranceLabel}</span>
                   </p>
                   <p className="flex items-start text-justify">
                     <CheckboxGlyph checked={contract.insuranceCancellationSelected} />
                     <span>{contract.insuranceCancellationLabel}</span>
                   </p>
+                  {anyInsuranceSelected && (activePolicyNumber || activeCertNumber) && (
+                    <p className="text-[8pt] text-slate-900 border-l-2 border-[#26549c] pl-2 py-0.5 bg-slate-50/70">
+                      <span className="font-bold">Póliza:</span>{' '}
+                      {matchedPolicy
+                        ? `${matchedPolicy.insurer} (${matchedPolicy.policyNumber})`
+                        : activePolicyNumber || 'Pendiente'}{' '}
+                      · <span className="font-bold">Nº Certificado:</span>{' '}
+                      {activeCertNumber || 'Pendiente'}
+                    </p>
+                  )}
                   <p className="flex items-start">
                     <CheckboxGlyph checked={contract.declineAssistanceInsurance} />
                     <span>El cliente no desea contratar el seguro de asistencia y repatriación.</span>
@@ -365,80 +479,230 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
       </article>
 
       {/* ==================== PAGE 3 ==================== */}
-      <article className="contract-a4-page shadow-md border border-slate-200">
+      <article data-contract-page="3" className="contract-a4-page shadow-md border border-slate-200">
         <DocumentWaveHeader agency={agency} />
-        <div className="flex-1 px-[16mm] py-[5mm] text-[8.8pt] leading-[1.35] text-slate-900">
-          <h2 className="text-[#26549c] text-[10pt] font-normal mb-3">
+        <div
+          className={`flex-1 px-[16mm] text-slate-900 ${
+            hasManyInstallments
+              ? 'py-[3mm] text-[7.9pt] leading-[1.22]'
+              : hasMultipleInstallments
+                ? 'py-[3.5mm] text-[8.4pt] leading-[1.28]'
+                : 'py-[5mm] text-[8.8pt] leading-[1.35]'
+          }`}
+        >
+          <h2
+            className={`text-[#26549c] text-[10pt] font-normal ${
+              hasMultipleInstallments ? 'mb-2' : 'mb-3'
+            }`}
+          >
             <span className="inline-block w-8">XIV.</span>Resumen de Conceptos y pagos
           </h2>
 
-          <div className="grid grid-cols-2 gap-8 items-start">
-            {/* Left financial summary table */}
-            <div>
-              <table className="w-full border-collapse text-[8.6pt]">
-                <tbody>
-                  {contract.conceptLines.map((line) => (
-                    <tr key={line.id} className="border-t border-black">
-                      <td className="py-1 pr-2 align-top">{line.label}</td>
-                      <td className="py-1 text-right align-top whitespace-nowrap tabular-nums">
-                        {formatEuroCompact(line.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="border-t-2 border-black">
-                    <td className="pt-2 text-right font-bold pr-4">TOTAL</td>
-                    <td className="pt-2 text-right font-bold whitespace-nowrap tabular-nums">
-                      {formatEuro(contract.totalAmount)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          {hasManyInstallments ? (
+            <>
+              {/* Top Row for 4-6 plazos: Conceptos (left) + Plazo 1 (right) */}
+              <div className="grid grid-cols-2 gap-6 items-start">
+                <div>
+                  <table className="w-full border-collapse text-[8pt]">
+                    <tbody>
+                      {contract.conceptLines.map((line) => (
+                        <tr key={line.id} className="border-t border-black">
+                          <td className="py-0.5 pr-2 align-top">{line.label}</td>
+                          <td className="py-0.5 text-right align-top whitespace-nowrap tabular-nums">
+                            {formatEuroCompact(line.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-black">
+                        <td className="pt-1 text-right font-bold pr-3">TOTAL</td>
+                        <td className="pt-1 text-right font-bold whitespace-nowrap tabular-nums">
+                          {formatEuro(contract.totalAmount)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p className="italic mt-2.5 text-[8pt]">
+                    Qué serán abonado en los siguientes {installmentStages.length} plazos:
+                  </p>
+                </div>
 
-              <p className="italic mt-5 text-[8.7pt]">Qué serán abonado en los siguientes plazos:</p>
-            </div>
-
-            {/* Right installment schedule & acceptance */}
-            <div className="space-y-4">
-              <div className="flex gap-2 items-start text-[8.6pt]">
-                <span>-</span>
-                <p className="italic font-semibold text-justify">{contract.installmentIntro}</p>
+                {/* Plazo 1 */}
+                <div className="space-y-1">
+                  <div className="flex gap-1.5 items-start text-[7.7pt] leading-[1.2]">
+                    <span>-</span>
+                    <p className="italic font-semibold text-justify">
+                      {installmentStages[0].introText}
+                    </p>
+                  </div>
+                  <table className="w-full border-collapse text-[7.7pt]">
+                    <tbody>
+                      {installmentStages[0].lines.map((inst) => (
+                        <tr key={inst.id} className="border-t border-black">
+                          <td className="py-[1.5px] pr-2 italic">{inst.label}</td>
+                          <td className="py-[1.5px] text-right italic whitespace-nowrap tabular-nums">
+                            {formatEuroCompact(inst.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-black">
+                        <td className="pt-0.5 text-right text-[7.4pt] italic pr-2 text-slate-700">
+                          Importe Plazo 1
+                        </td>
+                        <td className="pt-0.5 text-right font-bold whitespace-nowrap tabular-nums">
+                          {formatEuro(installmentStages[0].subtotal)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <table className="w-full border-collapse text-[8.6pt]">
-                <tbody>
-                  {contract.installmentLines.map((inst) => (
-                    <tr key={inst.id} className="border-t border-black">
-                      <td className="py-1 pr-2 italic">{inst.label}</td>
-                      <td className="py-1 text-right italic whitespace-nowrap tabular-nums">
-                        {formatEuroCompact(inst.amount)}
+              {/* Remaining Plazos 2..N arranged cleanly in 2 columns */}
+              <div className="mt-2.5 grid grid-cols-2 gap-x-6 gap-y-2 items-start">
+                {installmentStages.slice(1).map((stage, idx) => (
+                  <div key={stage.id} className="space-y-1">
+                    <div className="flex gap-1.5 items-start text-[7.6pt] leading-[1.18]">
+                      <span>-</span>
+                      <p className="italic font-semibold text-justify">{stage.introText}</p>
+                    </div>
+                    <table className="w-full border-collapse text-[7.6pt]">
+                      <tbody>
+                        {stage.lines.map((inst) => (
+                          <tr key={inst.id} className="border-t border-black">
+                            <td className="py-[1.5px] pr-2 italic">{inst.label}</td>
+                            <td className="py-[1.5px] text-right italic whitespace-nowrap tabular-nums">
+                              {formatEuroCompact(inst.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-black">
+                          <td className="pt-0.5 text-right text-[7.3pt] italic pr-2 text-slate-700">
+                            Importe Plazo {idx + 2}
+                          </td>
+                          <td className="pt-0.5 text-right font-bold whitespace-nowrap tabular-nums">
+                            {formatEuro(stage.subtotal)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-300 pt-1.5 text-[8pt]">
+                <div className="space-y-0.5">
+                  <p>El CONTRATANTE PRINCIPAL acepta y firma el documento.</p>
+                  <p>En prueba de conformidad, firma el presente contrato.</p>
+                </div>
+                <div className="font-bold tabular-nums text-[8.3pt]">
+                  TOTAL PLAZOS ({installmentStages.length}): {formatEuro(installmentsTotal)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-8 items-start">
+              {/* Left financial summary table */}
+              <div>
+                <table className="w-full border-collapse text-[8.6pt]">
+                  <tbody>
+                    {contract.conceptLines.map((line) => (
+                      <tr key={line.id} className="border-t border-black">
+                        <td className="py-1 pr-2 align-top">{line.label}</td>
+                        <td className="py-1 text-right align-top whitespace-nowrap tabular-nums">
+                          {formatEuroCompact(line.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-black">
+                      <td className="pt-2 text-right font-bold pr-4">TOTAL</td>
+                      <td className="pt-2 text-right font-bold whitespace-nowrap tabular-nums">
+                        {formatEuro(contract.totalAmount)}
                       </td>
                     </tr>
-                  ))}
-                  <tr className="border-t-2 border-black">
-                    <td />
-                    <td className="pt-1.5 text-right font-bold tabular-nums">
-                      {formatEuro(installmentsTotal)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
 
-              <div className="pt-6 text-[8.8pt] space-y-0.5">
-                <p>El CONTRATANTE PRINCIPAL acepta y firma el documento.</p>
-                <p>En prueba de conformidad, firma el presente contrato.</p>
+                <p className="italic mt-5 text-[8.7pt]">Qué serán abonado en los siguientes plazos:</p>
+              </div>
+
+              {/* Right installment schedule & acceptance */}
+              <div className={hasMultipleInstallments ? 'space-y-2.5' : 'space-y-4'}>
+                {installmentStages.map((stage, stageIdx) => (
+                  <div key={stage.id} className={hasMultipleInstallments ? 'space-y-1.5' : 'space-y-3'}>
+                    <div
+                      className={`flex gap-2 items-start ${
+                        hasMultipleInstallments ? 'text-[8.1pt] leading-[1.26]' : 'text-[8.6pt]'
+                      }`}
+                    >
+                      <span>-</span>
+                      <p className="italic font-semibold text-justify">{stage.introText}</p>
+                    </div>
+
+                    <table
+                      className={`w-full border-collapse ${
+                        hasMultipleInstallments ? 'text-[8.1pt]' : 'text-[8.6pt]'
+                      }`}
+                    >
+                      <tbody>
+                        {stage.lines.map((inst) => (
+                          <tr key={inst.id} className="border-t border-black">
+                            <td className={`${hasMultipleInstallments ? 'py-0.5' : 'py-1'} pr-2 italic`}>
+                              {inst.label}
+                            </td>
+                            <td
+                              className={`${
+                                hasMultipleInstallments ? 'py-0.5' : 'py-1'
+                              } text-right italic whitespace-nowrap tabular-nums`}
+                            >
+                              {formatEuroCompact(inst.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-black">
+                          <td className="pt-1 text-right text-[7.8pt] italic pr-2 text-slate-700">
+                            {hasMultipleInstallments ? `Importe Plazo ${stageIdx + 1}` : ''}
+                          </td>
+                          <td className="pt-1 text-right font-bold whitespace-nowrap tabular-nums">
+                            {formatEuro(stage.subtotal)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+
+                {hasMultipleInstallments && (
+                  <div className="flex items-center justify-between border-t border-slate-300 pt-1 text-[8.2pt] font-bold">
+                    <span>TOTAL PLAZOS ({installmentStages.length})</span>
+                    <span className="tabular-nums">{formatEuro(installmentsTotal)}</span>
+                  </div>
+                )}
+
+                <div className={`${hasMultipleInstallments ? 'pt-2 text-[8.4pt]' : 'pt-6 text-[8.8pt]'} space-y-0.5`}>
+                  <p>El CONTRATANTE PRINCIPAL acepta y firma el documento.</p>
+                  <p>En prueba de conformidad, firma el presente contrato.</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="mt-10">
-            <SignatureRow agencyLeft />
+          <div className={hasManyInstallments ? 'mt-2' : hasMultipleInstallments ? 'mt-4' : 'mt-10'}>
+            <SignatureRow
+              agencyLeft
+              compact={hasManyInstallments}
+              pageNumber={3}
+              signatureDataUrl={contract.clientSignatureDataUrl}
+              signedAt={contract.clientSignedAt}
+              interactiveSignature={interactiveSignature}
+              onRequestSign={onRequestSign}
+            />
           </div>
         </div>
         <DocumentWaveFooter agency={agency} />
       </article>
 
       {/* ==================== PAGE 4 (ANEXO I) ==================== */}
-      <article className="contract-a4-page shadow-md border border-slate-200">
+      <article data-contract-page="4" className="contract-a4-page shadow-md border border-slate-200">
         <DocumentWaveHeader agency={agency} />
         <div className="flex-1 px-[16mm] py-[5mm] text-[9pt] leading-[1.4] text-slate-900">
           <h2 className="text-[15pt] font-bold text-black mb-4 tracking-tight">
@@ -454,12 +718,32 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
                 <div>
                   <p>
                     <span className="inline-block w-8">A.</span>
-                    {contract.transportIncluded ? 'Transporte (INCLUIDO):' : 'Transporte (NO INCLUIDO):'}
+                    {contract.transportIncluded
+                      ? 'Transporte (VUELOS INCLUIDOS):'
+                      : 'Transporte (VUELOS NO INCLUIDOS / APARTE):'}
                   </p>
                   <p className="pl-8">
                     <span className="inline-block w-7">1.</span>
                     {contract.anexoTransportDetail}
                   </p>
+                  {flightDetailsText && (
+                    <p className="pl-8">
+                      <span className="inline-block w-7">2.</span>
+                      <span className="font-semibold">Fechas y datos de vuelos:</span>{' '}
+                      {flightDetailsText}
+                    </p>
+                  )}
+                  {!contract.transportIncluded && separateFlightPrice > 0 && (
+                    <p className="pl-8">
+                      <span className="inline-block w-7">{flightDetailsText ? '3.' : '2.'}</span>
+                      <span className="font-semibold">Importe vuelos aparte:</span>{' '}
+                      {formatEuro(separateFlightPrice)} (
+                      {flightMode === 'prorated'
+                        ? `prorrateado en ${installmentStages.length} ${installmentStages.length === 1 ? 'plazo' : 'plazos'}`
+                        : 'abono íntegro en el 1º plazo'}
+                      ).
+                    </p>
+                  )}
                 </div>
                 <p>
                   <span className="inline-block w-8">B.</span>Gestiones: {contract.anexoManagementDetail}
@@ -513,8 +797,15 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
             </section>
           </div>
 
-          <div className="mt-10">
-            <SignatureRow agencyLeft />
+          <div className="mt-7">
+            <SignatureRow
+              agencyLeft
+              pageNumber={4}
+              signatureDataUrl={contract.clientSignatureDataUrl}
+              signedAt={contract.clientSignedAt}
+              interactiveSignature={interactiveSignature}
+              onRequestSign={onRequestSign}
+            />
           </div>
         </div>
         <DocumentWaveFooter agency={agency} />
@@ -661,7 +952,7 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
       </article>
 
       {/* ==================== PAGE 6 (ANEXO II - Part 2) ==================== */}
-      <article className="contract-a4-page shadow-md border border-slate-200">
+      <article data-contract-page="6" className="contract-a4-page shadow-md border border-slate-200">
         <DocumentWaveHeader agency={agency} />
         <div className="flex-1 px-[16mm] py-[4mm] text-[8.4pt] leading-[1.33] text-slate-900">
           <div className="grid grid-cols-2 gap-6 text-justify">
@@ -776,14 +1067,21 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
           </div>
 
           <div className="mt-4">
-            <SignatureRow agencyLeft />
+            <SignatureRow
+              agencyLeft
+              pageNumber={6}
+              signatureDataUrl={contract.clientSignatureDataUrl}
+              signedAt={contract.clientSignedAt}
+              interactiveSignature={interactiveSignature}
+              onRequestSign={onRequestSign}
+            />
           </div>
         </div>
         <DocumentWaveFooter agency={agency} />
       </article>
 
       {/* ==================== PAGE 7 (AUTORIZACIÓN IMÁGENES) ==================== */}
-      <article className="contract-a4-page shadow-md border border-slate-200">
+      <article data-contract-page="7" className="contract-a4-page shadow-md border border-slate-200">
         <DocumentWaveHeader agency={agency} />
         <div className="flex-1 px-[20mm] py-[8mm] text-[9.8pt] leading-[1.48] text-slate-900">
           <h2 className="text-center text-[15pt] font-bold text-black mb-7 leading-snug">
@@ -831,7 +1129,14 @@ export const ContractDocumentPreview: React.FC<ContractDocumentPreviewProps> = (
           </div>
 
           <div className="mt-12">
-            <SignatureRow agencyLeft />
+            <SignatureRow
+              agencyLeft
+              pageNumber={7}
+              signatureDataUrl={contract.clientSignatureDataUrl}
+              signedAt={contract.clientSignedAt}
+              interactiveSignature={interactiveSignature}
+              onRequestSign={onRequestSign}
+            />
           </div>
         </div>
         <DocumentWaveFooter agency={agency} />

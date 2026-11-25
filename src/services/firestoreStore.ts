@@ -389,3 +389,192 @@ export async function deleteAccessUserRemote(accessUserId: string): Promise<void
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+export async function createOrUpdateSignatureRequestRemote(params: {
+  uid: string;
+  requestId: string;
+  accessToken: string;
+  contract: TravelContract;
+  agency: AgencyProfile;
+  isExistingRequest?: boolean;
+}): Promise<void> {
+  const path = `signatureRequests/${params.requestId}`;
+  const ref = doc(db, 'signatureRequests', params.requestId);
+  const contractPayload = sanitizeContractPayload(params.contract, params.uid);
+  const agencyData = {
+    commercialName: params.agency.commercialName,
+    legalHolderName: params.agency.legalHolderName,
+    cif: params.agency.cif,
+    licenseNote: params.agency.licenseNote,
+    addressLine1: params.agency.addressLine1,
+    addressLine2: params.agency.addressLine2,
+    phone: params.agency.phone,
+    email: params.agency.email,
+    iban: params.agency.iban,
+    bic: params.agency.bic,
+    bankBeneficiary: params.agency.bankBeneficiary,
+    footerText: params.agency.footerText,
+    jurisdictionCity: params.agency.jurisdictionCity,
+  };
+
+  try {
+    const snap = params.isExistingRequest === false ? null : await getDoc(ref);
+    if (snap && snap.exists()) {
+      const existingData = snap.data() as Record<string, unknown>;
+      const existingSigUrl = String(existingData?.clientSignatureDataUrl ?? '');
+      const alreadySigned = existingData?.status === 'signed' && existingSigUrl.length > 0;
+      const finalSigUrl = contractPayload.clientSignatureDataUrl || existingSigUrl;
+      const finalSignerName =
+        contractPayload.clientSignerName || String(existingData?.clientSignerName ?? '');
+      const finalSignedAt =
+        contractPayload.clientSignedAt || String(existingData?.clientSignedAt ?? '');
+      const finalAgencyCopySentAt =
+        contractPayload.agencyCopySentAt || String(existingData?.agencyCopySentAt ?? '');
+      const finalAgencyCopyEmail =
+        contractPayload.agencyCopyEmail || String(existingData?.agencyCopyEmail ?? '');
+      const finalStatus = alreadySigned || finalSigUrl ? 'signed' : 'pending';
+
+      await updateDoc(ref, {
+        contractNumber: contractPayload.contractNumber,
+        status: finalStatus,
+        contractData: contractPayload,
+        agencyData,
+        clientSignatureDataUrl: finalSigUrl,
+        clientSignerName: finalSignerName,
+        clientSignedAt: finalSignedAt,
+        agencyCopySentAt: finalAgencyCopySentAt,
+        agencyCopyEmail: finalAgencyCopyEmail,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        ownerId: params.uid,
+        contractId: params.contract.id,
+        contractNumber: contractPayload.contractNumber,
+        accessToken: params.accessToken,
+        status: 'pending',
+        contractData: contractPayload,
+        agencyData,
+        clientSignatureDataUrl: '',
+        clientSignerName: '',
+        clientSignedAt: '',
+        agencyCopySentAt: '',
+        agencyCopyEmail: '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export interface RemoteSignatureRequestPayload {
+  id: string;
+  ownerId?: string;
+  contractId?: string;
+  contractNumber?: string;
+  accessToken?: string;
+  status?: 'pending' | 'signed';
+  contractData?: Record<string, unknown>;
+  agencyData?: Record<string, unknown>;
+  clientSignatureDataUrl?: string;
+  clientSignerName?: string;
+  clientSignedAt?: string;
+  agencyCopySentAt?: string;
+  agencyCopyEmail?: string;
+}
+
+export async function getSignatureRequestRemote(
+  requestId: string
+): Promise<RemoteSignatureRequestPayload | null> {
+  const path = `signatureRequests/${requestId}`;
+  try {
+    const snap = await getDoc(doc(db, 'signatureRequests', requestId));
+    if (!snap.exists()) return null;
+    const data = snap.data() as Omit<RemoteSignatureRequestPayload, 'id'>;
+    return {
+      ...data,
+      id: snap.id,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function submitClientSignatureRemote(params: {
+  requestId: string;
+  signatureDataUrl: string;
+  signerName: string;
+  signedAt: string;
+}): Promise<void> {
+  const path = `signatureRequests/${params.requestId}`;
+  try {
+    await updateDoc(doc(db, 'signatureRequests', params.requestId), {
+      status: 'signed',
+      clientSignatureDataUrl: params.signatureDataUrl.slice(0, 60000),
+      clientSignerName: params.signerName.trim().slice(0, 150),
+      clientSignedAt: params.signedAt.trim().slice(0, 80),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function markSignatureRequestEmailSentRemote(params: {
+  requestId: string;
+  agencyCopySentAt: string;
+  agencyCopyEmail: string;
+}): Promise<void> {
+  const path = `signatureRequests/${params.requestId}`;
+  try {
+    await updateDoc(doc(db, 'signatureRequests', params.requestId), {
+      agencyCopySentAt: params.agencyCopySentAt.trim().slice(0, 80),
+      agencyCopyEmail: params.agencyCopyEmail.trim().slice(0, 120),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export function subscribeSignatureRequests(
+  uid: string,
+  onData: (
+    items: Array<{
+      id: string;
+      contractId: string;
+      status: 'pending' | 'signed';
+      clientSignatureDataUrl: string;
+      clientSignerName: string;
+      clientSignedAt: string;
+      agencyCopySentAt: string;
+      agencyCopyEmail: string;
+    }>
+  ) => void
+): Unsubscribe {
+  const path = 'signatureRequests';
+  const q = query(collection(db, path), where('ownerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items = snapshot.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          contractId: String(data.contractId ?? ''),
+          status: (data.status === 'signed' ? 'signed' : 'pending') as 'pending' | 'signed',
+          clientSignatureDataUrl: String(data.clientSignatureDataUrl ?? ''),
+          clientSignerName: String(data.clientSignerName ?? ''),
+          clientSignedAt: String(data.clientSignedAt ?? ''),
+          agencyCopySentAt: String(data.agencyCopySentAt ?? ''),
+          agencyCopyEmail: String(data.agencyCopyEmail ?? ''),
+        };
+      });
+      onData(items);
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, path)
+  );
+}
+

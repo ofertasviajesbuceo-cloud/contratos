@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, PenTool, X } from 'lucide-react';
 import type { Client, TripTemplate } from '../types/contract';
 import {
   formatEuro,
@@ -23,6 +23,7 @@ interface NewContractModalProps {
     isNewClient: boolean;
     contractNumber: string;
     travelerRole: TravelerRole;
+    openSignatureFlow?: boolean;
   }) => Promise<void> | void;
 }
 
@@ -54,6 +55,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
 
   const wasOpenRef = useRef(false);
+  const openSignatureFlowRef = useRef(false);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -76,11 +78,19 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    if (!templateId && templates.length > 0) {
-      setTemplateId(initialTemplateId || templates[0].id);
+    if (templates.length > 0 && (!templateId || !templates.some((t) => t.id === templateId))) {
+      setTemplateId(
+        (initialTemplateId && templates.some((t) => t.id === initialTemplateId)
+          ? initialTemplateId
+          : templates[0].id)
+      );
     }
-    if (!clientId && clients.length > 0) {
-      setClientId(initialClientId || clients[0].id);
+    if (clients.length > 0 && (!clientId || !clients.some((c) => c.id === clientId))) {
+      setClientId(
+        (initialClientId && clients.some((c) => c.id === initialClientId)
+          ? initialClientId
+          : clients[0].id)
+      );
     }
   }, [open, templateId, clientId, templates, clients, initialTemplateId, initialClientId]);
 
@@ -105,6 +115,9 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
       nextErrors.contractNumber = numberErr;
     }
 
+    const openSignatureFlow = openSignatureFlowRef.current;
+    openSignatureFlowRef.current = false;
+
     if (clientMode === 'existing') {
       const existing = clients.find((c) => c.id === clientId);
       if (!existing) {
@@ -123,6 +136,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
           isNewClient: false,
           contractNumber: finalNumber,
           travelerRole,
+          openSignatureFlow,
         });
       } catch (err) {
         setSubmitError(
@@ -164,6 +178,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
         isNewClient: true,
         contractNumber: finalNumber,
         travelerRole,
+        openSignatureFlow,
       });
     } catch (err) {
       setSubmitError(
@@ -442,7 +457,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+        <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -453,10 +468,24 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({
           </button>
           <button
             type="submit"
+            onClick={() => {
+              openSignatureFlowRef.current = false;
+            }}
             disabled={submitting || templates.length === 0}
             className="px-4 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Generando contrato...' : 'Generar y abrir contrato'}
+          </button>
+          <button
+            type="submit"
+            onClick={() => {
+              openSignatureFlowRef.current = true;
+            }}
+            disabled={submitting || templates.length === 0}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <PenTool className="w-3.5 h-3.5" aria-hidden="true" />
+            Enviar a la firma
           </button>
         </div>
       </form>

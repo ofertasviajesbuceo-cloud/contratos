@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import type { AgencyProfile } from '../types/contract';
+import { Plus, Trash2, X } from 'lucide-react';
+import type { AgencyProfile, InsurancePolicyOption } from '../types/contract';
+import { normalizeInsurancePolicies } from '../utils/contractLogic';
 
 interface AgencySettingsModalProps {
   open: boolean;
@@ -15,10 +16,24 @@ export const AgencySettingsModal: React.FC<AgencySettingsModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const [draft, setDraft] = useState<AgencyProfile>(agency);
+  const [draft, setDraft] = useState<AgencyProfile>(() => ({
+    ...agency,
+    insurancePolicies: normalizeInsurancePolicies(agency.insurancePolicies),
+  }));
+  const [newInsurer, setNewInsurer] = useState('');
+  const [newPolicyNumber, setNewPolicyNumber] = useState('');
+  const [newPolicyName, setNewPolicyName] = useState('');
 
   React.useEffect(() => {
-    if (open) setDraft(agency);
+    if (open) {
+      setDraft({
+        ...agency,
+        insurancePolicies: normalizeInsurancePolicies(agency.insurancePolicies),
+      });
+      setNewInsurer('');
+      setNewPolicyNumber('');
+      setNewPolicyName('');
+    }
   }, [open, agency]);
 
   if (!open) return null;
@@ -214,6 +229,128 @@ export const AgencySettingsModal: React.FC<AgencySettingsModalProps> = ({
               onChange={(e) => setDraft({ ...draft, footerText: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
             />
+          </div>
+
+          <div className="sm:col-span-2 border-t border-slate-200 pt-4 space-y-2.5">
+            <div>
+              <span className="block text-xs font-semibold text-slate-800">
+                Listado de pólizas de seguro disponibles (Punto IX)
+              </span>
+              <p className="text-[11px] text-slate-500">
+                Estas pólizas aparecerán en el desplegable al habilitar Seguros dentro de cada contrato.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {(draft.insurancePolicies ?? []).map((policy, idx) => (
+                <div
+                  key={policy.id}
+                  className="grid grid-cols-12 gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg p-2"
+                >
+                  <input
+                    type="text"
+                    aria-label={`Aseguradora póliza ${idx + 1}`}
+                    value={policy.insurer}
+                    placeholder="Aseguradora"
+                    onChange={(e) => {
+                      const next = [...(draft.insurancePolicies ?? [])];
+                      next[idx] = { ...next[idx], insurer: e.target.value };
+                      setDraft({ ...draft, insurancePolicies: next });
+                    }}
+                    className="col-span-3 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
+                  />
+                  <input
+                    type="text"
+                    aria-label={`Número póliza ${idx + 1}`}
+                    value={policy.policyNumber}
+                    placeholder="Nº Póliza"
+                    onChange={(e) => {
+                      const next = [...(draft.insurancePolicies ?? [])];
+                      next[idx] = { ...next[idx], policyNumber: e.target.value };
+                      setDraft({ ...draft, insurancePolicies: next });
+                    }}
+                    className="col-span-4 px-2 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-md"
+                  />
+                  <input
+                    type="text"
+                    aria-label={`Descripción póliza ${idx + 1}`}
+                    value={policy.name}
+                    placeholder="Descripción"
+                    onChange={(e) => {
+                      const next = [...(draft.insurancePolicies ?? [])];
+                      next[idx] = { ...next[idx], name: e.target.value };
+                      setDraft({ ...draft, insurancePolicies: next });
+                    }}
+                    className="col-span-4 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-md"
+                  />
+                  <button
+                    type="button"
+                    disabled={(draft.insurancePolicies?.length ?? 0) <= 1}
+                    aria-label={`Eliminar póliza ${policy.policyNumber}`}
+                    onClick={() => {
+                      const next = (draft.insurancePolicies ?? []).filter((_, i) => i !== idx);
+                      setDraft({ ...draft, insurancePolicies: next });
+                    }}
+                    className="col-span-1 p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-40 flex justify-center"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-12 gap-2 items-center">
+              <input
+                type="text"
+                aria-label="Nueva aseguradora"
+                placeholder="Aseguradora (ej. AXA)"
+                value={newInsurer}
+                onChange={(e) => setNewInsurer(e.target.value)}
+                className="col-span-3 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+              />
+              <input
+                type="text"
+                aria-label="Nuevo número de póliza"
+                placeholder="Nº de póliza"
+                value={newPolicyNumber}
+                onChange={(e) => setNewPolicyNumber(e.target.value)}
+                className="col-span-4 px-2.5 py-1.5 text-xs font-mono border border-slate-200 rounded-md"
+              />
+              <input
+                type="text"
+                aria-label="Descripción nueva póliza"
+                placeholder="Descripción de cobertura"
+                value={newPolicyName}
+                onChange={(e) => setNewPolicyName(e.target.value)}
+                className="col-span-3 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md"
+              />
+              <button
+                type="button"
+                disabled={!newPolicyNumber.trim() || (draft.insurancePolicies?.length ?? 0) >= 20}
+                onClick={() => {
+                  const num = newPolicyNumber.trim();
+                  if (!num) return;
+                  const insurer = newInsurer.trim() || 'AXA';
+                  const option: InsurancePolicyOption = {
+                    id: `pol-${Date.now()}`,
+                    insurer,
+                    policyNumber: num,
+                    name: newPolicyName.trim() || `${insurer} · ${num}`,
+                  };
+                  setDraft({
+                    ...draft,
+                    insurancePolicies: [...(draft.insurancePolicies ?? []), option],
+                  });
+                  setNewInsurer('');
+                  setNewPolicyNumber('');
+                  setNewPolicyName('');
+                }}
+                className="col-span-2 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                Añadir
+              </button>
+            </div>
           </div>
         </div>
 

@@ -3,7 +3,11 @@ import type {
   AgencyProfile,
   Client,
   ConceptLine,
+  FlightPaymentMode,
+  InstallmentCount,
   InstallmentLine,
+  InstallmentStage,
+  InsurancePolicyOption,
   ItineraryDay,
   OptionalServiceItem,
   TravelContract,
@@ -21,7 +25,7 @@ export const BLUEPRINT_LIMITS = {
   maxArrayPayments: 15,
   maxArrayServices: 15,
   maxArrayConcepts: 20,
-  maxArrayInstallments: 10,
+  maxArrayInstallments: 25,
   maxArrayHealth: 10,
   maxStr: {
     ownerId: 128,
@@ -49,6 +53,7 @@ export const BLUEPRINT_LIMITS = {
     specialRequest: 600,
     transportSummary: 300,
     transportCheckbox: 250,
+    flightDetails: 600,
     insuranceBasicLabel: 500,
     insuranceCancellationLabel: 300,
     maeUrl: 300,
@@ -56,6 +61,10 @@ export const BLUEPRINT_LIMITS = {
     anexoTransport: 200,
     anexoManagement: 200,
     anexoAccommodation: 250,
+    signatureDataUrl: 60000,
+    signerName: 150,
+    signedAt: 80,
+    signatureRequestId: 128,
   },
 } as const;
 
@@ -74,11 +83,107 @@ const SPANISH_MONTHS = [
   'diciembre',
 ];
 
+export const DEFAULT_INSTALLMENT_INTRO =
+  'Momento de la firma del presente contrato y en concepto de Reserva y Pago inicial más vuelos y seguro si desea el CONTRATANTE PRINCIPAL la cantidad de:';
+
+export function normalizeInstallmentCount(value: unknown): InstallmentCount {
+  const num = Number(value);
+  if (num === 2 || num === 3 || num === 4 || num === 5 || num === 6) return num;
+  return 1;
+}
+
+export function normalizeFlightPaymentMode(value: unknown): FlightPaymentMode {
+  return value === 'prorated' ? 'prorated' : 'first_installment';
+}
+
 export function formatSpanishLongDate(date: Date = new Date()): string {
   const day = String(date.getDate()).padStart(2, '0');
   const month = SPANISH_MONTHS[date.getMonth()] ?? 'enero';
   const year = date.getFullYear();
   return `${day} de ${month} de ${year}`;
+}
+
+export function formatSpanishNaturalDate(date: Date): string {
+  const day = date.getDate();
+  const month = SPANISH_MONTHS[date.getMonth()] ?? 'enero';
+  const year = date.getFullYear();
+  return `${day} de ${month} de ${year}`;
+}
+
+export function parseSpanishDate(dateText: string): Date | null {
+  const clean = String(dateText ?? '').trim().toLowerCase();
+  if (!clean) return null;
+
+  const longMatch = /^(\d{1,2})\s+de\s+([a-záéíóú]+)\s+(?:de|del)\s+(\d{4})$/i.exec(clean);
+  if (longMatch) {
+    const day = Number(longMatch[1]);
+    const monthName = longMatch[2]
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const monthIdx = SPANISH_MONTHS.indexOf(monthName);
+    const year = Number(longMatch[3]);
+    if (monthIdx >= 0 && year >= 1900 && year <= 2100 && day >= 1 && day <= 31) {
+      const candidate = new Date(year, monthIdx, day);
+      if (
+        candidate.getFullYear() === year &&
+        candidate.getMonth() === monthIdx &&
+        candidate.getDate() === day
+      ) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  const slashMatch = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(clean);
+  if (slashMatch) {
+    const day = Number(slashMatch[1]);
+    const monthIdx = Number(slashMatch[2]) - 1;
+    const year = Number(slashMatch[3]);
+    const candidate = new Date(year, monthIdx, day);
+    if (
+      candidate.getFullYear() === year &&
+      candidate.getMonth() === monthIdx &&
+      candidate.getDate() === day
+    ) {
+      return candidate;
+    }
+    return null;
+  }
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(clean);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const monthIdx = Number(isoMatch[2]) - 1;
+    const day = Number(isoMatch[3]);
+    const candidate = new Date(year, monthIdx, day);
+    if (
+      candidate.getFullYear() === year &&
+      candidate.getMonth() === monthIdx &&
+      candidate.getDate() === day
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+export function subtractMonthsFromSpanishDate(
+  startDateText: string,
+  monthsBefore: number
+): string | null {
+  const parsed = parseSpanishDate(startDateText);
+  if (!parsed) return null;
+
+  const origDay = parsed.getDate();
+  const totalMonths = parsed.getFullYear() * 12 + parsed.getMonth() - monthsBefore;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = ((totalMonths % 12) + 12) % 12;
+  const maxDayInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const targetDay = Math.min(origDay, maxDayInMonth);
+
+  return formatSpanishNaturalDate(new Date(targetYear, targetMonth, targetDay));
 }
 
 export function formatEuro(amount: number): string {
@@ -124,6 +229,89 @@ export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(num * 100) / 100));
 }
 
+export const DEFAULT_INSURANCE_POLICIES: InsurancePolicyOption[] = [
+  {
+    id: 'pol-axa-basico',
+    insurer: 'AXA',
+    policyNumber: '14095000359200',
+    name: 'AXA · Asistencia en Viaje y Reembolso',
+  },
+  {
+    id: 'pol-axa-buceo',
+    insurer: 'AXA',
+    policyNumber: '14095000359201',
+    name: 'AXA · Vida a Bordo y Buceo Internacional',
+  },
+  {
+    id: 'pol-intermundial-buceo',
+    insurer: 'Intermundial',
+    policyNumber: 'IM-BUCEO-2026',
+    name: 'Intermundial · TotalSports / Buceo',
+  },
+];
+
+export function normalizeInsurancePolicies(raw: unknown): InsurancePolicyOption[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_INSURANCE_POLICIES.map((p) => ({ ...p }));
+  }
+  const normalized = raw
+    .slice(0, 20)
+    .map((p, idx) => {
+      const item = (p ?? {}) as Partial<InsurancePolicyOption>;
+      const policyNumber = clampString(String(item.policyNumber ?? '').trim(), 80);
+      if (!policyNumber) return null;
+      return {
+        id: clampString(String(item.id ?? '').trim() || `pol-${idx + 1}`, 64),
+        insurer: clampString(String(item.insurer ?? '').trim() || 'AXA', 60),
+        policyNumber,
+        name: clampString(
+          String(item.name ?? '').trim() || `${item.insurer || 'Póliza'} · ${policyNumber}`,
+          120
+        ),
+      };
+    })
+    .filter((p): p is InsurancePolicyOption => p !== null);
+
+  return normalized.length > 0 ? normalized : DEFAULT_INSURANCE_POLICIES.map((p) => ({ ...p }));
+}
+
+export function extractDefaultPolicyFromLabel(label: string): string {
+  const match = /número\s+de\s+P[oó]liza\s+([A-Za-z0-9._-]+)/i.exec(String(label ?? ''));
+  return match?.[1] ?? '';
+}
+
+export function formatInsuranceLabelWithPolicyAndCert(
+  baseLabel: string,
+  insurer: string,
+  policyNumber: string,
+  certificateNumber: string
+): string {
+  let result = String(baseLabel ?? '');
+  const cleanInsurer = insurer.trim();
+  const cleanPolicy = policyNumber.trim();
+  const cleanCert = certificateNumber.trim();
+
+  if (cleanInsurer && /aseguradora\s+[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ._-]+/i.test(result)) {
+    result = result.replace(
+      /(aseguradora\s+)[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ._-]+/i,
+      `$1${cleanInsurer}`
+    );
+  }
+  if (cleanPolicy && /número\s+de\s+P[oó]liza\s+[A-Za-z0-9._-]+/i.test(result)) {
+    result = result.replace(
+      /(número\s+de\s+P[oó]liza\s+)[A-Za-z0-9._-]+/i,
+      `$1${cleanPolicy}`
+    );
+  }
+  if (cleanCert && /Nº\s+de\s+Certificado\s+[A-Za-z0-9._-]+/i.test(result)) {
+    result = result.replace(
+      /(Nº\s+de\s+Certificado\s+)[A-Za-z0-9._-]+/i,
+      `$1${cleanCert}`
+    );
+  }
+  return result;
+}
+
 export function normalizeAgencyProfile(raw: Partial<AgencyProfile> | null | undefined): AgencyProfile {
   const src = raw ?? {};
   return {
@@ -143,6 +331,7 @@ export function normalizeAgencyProfile(raw: Partial<AgencyProfile> | null | unde
     footerText: typeof src.footerText === 'string' && src.footerText ? src.footerText : 'María del Pilar Jiménez Reina – 15405540W – Licencia de Agencia de Viajes en Cataluña (España)',
     jurisdictionCity: typeof src.jurisdictionCity === 'string' && src.jurisdictionCity ? src.jurisdictionCity : 'Tarragona',
     publicDomain: typeof src.publicDomain === 'string' ? src.publicDomain : '',
+    insurancePolicies: normalizeInsurancePolicies(src.insurancePolicies),
     createdAt: src.createdAt,
     updatedAt: src.updatedAt,
   };
@@ -204,6 +393,12 @@ export function normalizeTemplate(raw: Partial<TripTemplate> | null | undefined)
     transportIncluded: Boolean(src.transportIncluded),
     transportSummary: typeof src.transportSummary === 'string' && src.transportSummary ? src.transportSummary : 'Según ficha técnica',
     transportCheckboxLabel: typeof src.transportCheckboxLabel === 'string' && src.transportCheckboxLabel ? src.transportCheckboxLabel : 'El cliente conoce las condiciones de transporte.',
+    flightDetails: typeof src.flightDetails === 'string' ? src.flightDetails : '',
+    flightPrice:
+      !src.transportIncluded && Number.isFinite(Number(src.flightPrice)) && Number(src.flightPrice) >= 0
+        ? Number(src.flightPrice)
+        : 0,
+    flightPaymentMode: normalizeFlightPaymentMode(src.flightPaymentMode),
     insuranceBasicLabel: typeof src.insuranceBasicLabel === 'string' && src.insuranceBasicLabel ? src.insuranceBasicLabel : 'Seguro Básico de Asistencia en Viaje',
     insuranceBasicPrice: Number.isFinite(Number(src.insuranceBasicPrice)) ? Number(src.insuranceBasicPrice) : 0,
     insuranceCancellationLabel: typeof src.insuranceCancellationLabel === 'string' && src.insuranceCancellationLabel ? src.insuranceCancellationLabel : 'Cobertura adicional de anulación',
@@ -291,17 +486,33 @@ export function normalizeContract(raw: Partial<TravelContract> | null | undefine
     transportSummary: typeof src.transportSummary === 'string' && src.transportSummary ? src.transportSummary : 'Según ficha técnica',
     transportCheckboxLabel: typeof src.transportCheckboxLabel === 'string' && src.transportCheckboxLabel ? src.transportCheckboxLabel : 'El cliente conoce las condiciones de transporte.',
     transportChecked: Boolean(src.transportChecked),
+    flightDetails: typeof src.flightDetails === 'string' ? src.flightDetails : '',
+    flightPrice:
+      !src.transportIncluded && Number.isFinite(Number(src.flightPrice)) && Number(src.flightPrice) >= 0
+        ? Number(src.flightPrice)
+        : 0,
+    flightPaymentMode: normalizeFlightPaymentMode(src.flightPaymentMode),
     insuranceBasicSelected: Boolean(src.insuranceBasicSelected),
     insuranceBasicLabel: typeof src.insuranceBasicLabel === 'string' && src.insuranceBasicLabel ? src.insuranceBasicLabel : 'Seguro Básico de Asistencia en Viaje',
     insuranceBasicPrice: Number.isFinite(Number(src.insuranceBasicPrice)) ? Number(src.insuranceBasicPrice) : 0,
     insuranceCancellationSelected: Boolean(src.insuranceCancellationSelected),
     insuranceCancellationLabel: typeof src.insuranceCancellationLabel === 'string' && src.insuranceCancellationLabel ? src.insuranceCancellationLabel : 'Cobertura adicional de anulación',
     insuranceCancellationPrice: Number.isFinite(Number(src.insuranceCancellationPrice)) ? Number(src.insuranceCancellationPrice) : 0,
+    insurancePolicyNumber:
+      typeof src.insurancePolicyNumber === 'string'
+        ? src.insurancePolicyNumber
+        : extractDefaultPolicyFromLabel(typeof src.insuranceBasicLabel === 'string' ? src.insuranceBasicLabel : ''),
+    insuranceCertificateNumber:
+      typeof src.insuranceCertificateNumber === 'string' ? src.insuranceCertificateNumber : '',
     declineAssistanceInsurance: src.declineAssistanceInsurance !== undefined ? Boolean(src.declineAssistanceInsurance) : !src.insuranceBasicSelected,
     declineCancellationInsurance: src.declineCancellationInsurance !== undefined ? Boolean(src.declineCancellationInsurance) : !src.insuranceCancellationSelected,
     maeDestinationUrl: typeof src.maeDestinationUrl === 'string' && src.maeDestinationUrl ? src.maeDestinationUrl : 'https://www.exteriores.gob.es',
     conceptLines,
-    installmentIntro: typeof src.installmentIntro === 'string' && src.installmentIntro ? src.installmentIntro : 'Reserva y pago inicial según contrato.',
+    installmentCount: normalizeInstallmentCount(src.installmentCount),
+    installmentIntro:
+      typeof src.installmentIntro === 'string' && src.installmentIntro
+        ? src.installmentIntro
+        : DEFAULT_INSTALLMENT_INTRO,
     installmentLines,
     totalAmount: Number.isFinite(Number(src.totalAmount)) ? Number(src.totalAmount) : calculateConceptTotal(conceptLines),
     anexoTransportDetail: typeof src.anexoTransportDetail === 'string' && src.anexoTransportDetail ? src.anexoTransportDetail : 'Según programa',
@@ -315,6 +526,12 @@ export function normalizeContract(raw: Partial<TravelContract> | null | undefine
       : [],
     generalConditionsDate: typeof src.generalConditionsDate === 'string' && src.generalConditionsDate ? src.generalConditionsDate : '14 de septiembre de 2026',
     imageAuthorization: src.imageAuthorization === 'declined' ? 'declined' : 'authorized',
+    clientSignatureDataUrl: typeof src.clientSignatureDataUrl === 'string' ? src.clientSignatureDataUrl : '',
+    clientSignerName: typeof src.clientSignerName === 'string' ? src.clientSignerName : '',
+    clientSignedAt: typeof src.clientSignedAt === 'string' ? src.clientSignedAt : '',
+    signatureRequestId: typeof src.signatureRequestId === 'string' ? src.signatureRequestId : '',
+    agencyCopySentAt: typeof src.agencyCopySentAt === 'string' ? src.agencyCopySentAt : '',
+    agencyCopyEmail: typeof src.agencyCopyEmail === 'string' ? src.agencyCopyEmail : '',
     createdAt: src.createdAt,
     updatedAt: src.updatedAt,
   };
@@ -343,8 +560,243 @@ export function computeInsurancePrice(contract: Pick<
   return Math.round(total * 100) / 100;
 }
 
+function round2(value: number): number {
+  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+}
+
+function splitAmountIntoStages(total: number, count: number): number[] {
+  if (count <= 1) return [round2(total)];
+  const totalCents = Math.max(0, Math.round(round2(total) * 100));
+  const baseCents = Math.floor(totalCents / count);
+  const remCents = totalCents - baseCents * count;
+  return Array.from({ length: count }, (_, idx) =>
+    round2((baseCents + (idx < remCents ? 1 : 0)) / 100)
+  );
+}
+
+export function summarizeTripConcepts(conceptLines: ConceptLine[]): string {
+  const activeLabels = conceptLines
+    .filter(
+      (line) =>
+        line.id !== 'insurance' &&
+        line.id !== 'flights' &&
+        (Number(line.amount) || 0) > 0
+    )
+    .map((line) => {
+      if (line.id === 'pkg-diver') return 'Paquete de Viaje (Buceador)';
+      if (line.id === 'pkg-non-diver') return 'Paquete de Viaje (No Buceador)';
+      if (line.id === 'extra-optional') {
+        const parenMatch = /\((.+)\)/.exec(line.label);
+        return parenMatch?.[1] ? parenMatch[1] : 'Extras opcionales';
+      }
+      if (line.id === 'services-extra') {
+        return line.label.trim() || 'Servicios adicionales';
+      }
+      return line.label.trim();
+    })
+    .filter((label) => label.length > 0);
+
+  return activeLabels.length > 0 ? activeLabels.join(' + ') : 'Paquete de Viaje';
+}
+
+export function buildInstallmentSchedule(
+  contract: Pick<
+    TravelContract,
+    | 'installmentCount'
+    | 'startDateText'
+    | 'conceptLines'
+    | 'installmentIntro'
+    | 'installmentLines'
+    | 'insuranceBasicSelected'
+    | 'insuranceBasicPrice'
+    | 'insuranceCancellationSelected'
+    | 'insuranceCancellationPrice'
+    | 'totalAmount'
+  > &
+    Partial<Pick<TravelContract, 'transportIncluded' | 'flightPrice' | 'flightPaymentMode'>>
+): InstallmentStage[] {
+  const count = normalizeInstallmentCount(contract.installmentCount);
+  const conceptTotal = calculateConceptTotal(contract.conceptLines);
+  const effectiveTotal =
+    conceptTotal > 0 || contract.conceptLines.length > 0
+      ? conceptTotal
+      : Math.max(0, round2(contract.totalAmount));
+
+  const insuranceBasic = contract.insuranceBasicSelected
+    ? Math.max(0, round2(contract.insuranceBasicPrice))
+    : 0;
+  const insuranceCancel = contract.insuranceCancellationSelected
+    ? Math.max(0, round2(contract.insuranceCancellationPrice))
+    : 0;
+
+  const insuranceLineAmount = Math.max(
+    0,
+    round2(contract.conceptLines.find((l) => l.id === 'insurance')?.amount ?? 0)
+  );
+  const selectedInsuranceSum = round2(insuranceBasic + insuranceCancel);
+  const manualInsurance =
+    insuranceLineAmount > selectedInsuranceSum
+      ? round2(insuranceLineAmount - selectedInsuranceSum)
+      : 0;
+  const totalInsurance = Math.min(
+    effectiveTotal,
+    round2(selectedInsuranceSum + manualInsurance)
+  );
+
+  const hasFlightConceptLine = contract.conceptLines.some((l) => l.id === 'flights');
+  const flightLineAmount = Math.max(
+    0,
+    round2(contract.conceptLines.find((l) => l.id === 'flights')?.amount ?? 0)
+  );
+  const configuredFlightPrice = !contract.transportIncluded
+    ? Math.max(0, round2(contract.flightPrice ?? 0))
+    : 0;
+  const rawSeparateFlight = !contract.transportIncluded
+    ? hasFlightConceptLine
+      ? flightLineAmount
+      : configuredFlightPrice
+    : flightLineAmount;
+
+  const remainingAfterInsurance = Math.max(0, round2(effectiveTotal - totalInsurance));
+  const separateFlightAmount = Math.min(remainingAfterInsurance, rawSeparateFlight);
+  const packageSubtotal = Math.max(0, round2(remainingAfterInsurance - separateFlightAmount));
+  const flightMode = normalizeFlightPaymentMode(contract.flightPaymentMode);
+
+  const summary = summarizeTripConcepts(contract.conceptLines);
+  const customOrDefaultIntro =
+    contract.installmentIntro &&
+    contract.installmentIntro.trim().length > 0 &&
+    contract.installmentIntro.trim() !== 'Reserva y pago inicial según contrato.'
+      ? contract.installmentIntro
+      : DEFAULT_INSTALLMENT_INTRO;
+
+  const buildInsuranceLines = (): InstallmentLine[] => {
+    const list: InstallmentLine[] = [
+      { id: 'inst-basic-ins', label: 'Seguro Básico VIP', amount: insuranceBasic },
+      { id: 'inst-cancel-ins', label: 'Cobertura ANULACIÓN Seguro', amount: insuranceCancel },
+    ];
+    if (manualInsurance > 0) {
+      list.push({
+        id: 'inst-manual-ins',
+        label: 'Seguro (Opcional)',
+        amount: manualInsurance,
+      });
+    }
+    return list;
+  };
+
+  const pkgParts = splitAmountIntoStages(packageSubtotal, count);
+  const flightParts =
+    separateFlightAmount > 0
+      ? flightMode === 'prorated'
+        ? splitAmountIntoStages(separateFlightAmount, count)
+        : [separateFlightAmount, ...Array<number>(count - 1).fill(0)]
+      : Array<number>(count).fill(0);
+
+  if (count === 1) {
+    const lines: InstallmentLine[] = [
+      {
+        id: 'inst-package',
+        label: `Reserva y pago total (${summary})`,
+        amount: pkgParts[0],
+      },
+      ...(flightParts[0] > 0
+        ? [{ id: 'inst-flights', label: 'Vuelos', amount: flightParts[0] }]
+        : []),
+      ...buildInsuranceLines(),
+    ];
+    return [
+      {
+        id: 'stage-1',
+        title: 'Plazo único (100%)',
+        dueLabel: 'Firma del contrato',
+        introText: customOrDefaultIntro,
+        lines,
+        subtotal: effectiveTotal,
+      },
+    ];
+  }
+
+  const shareText = count === 2 ? '50%' : `1/${count}`;
+  const stage1Lines: InstallmentLine[] = [
+    {
+      id: 'inst-p1-trip',
+      label: `Reserva y ${shareText} del viaje (${summary})`,
+      amount: pkgParts[0],
+    },
+    ...(flightParts[0] > 0
+      ? [
+          {
+            id: 'inst-p1-flights',
+            label:
+              flightMode === 'prorated'
+                ? `Vuelos (1/${count} prorrateado)`
+                : 'Vuelos (pago íntegro en 1º plazo)',
+            amount: flightParts[0],
+          },
+        ]
+      : []),
+    ...buildInsuranceLines(),
+  ];
+
+  const stages: InstallmentStage[] = [
+    {
+      id: 'stage-1',
+      title: `Plazo 1 (Reserva + Seguros${flightParts[0] > 0 ? ' + Vuelos' : ''} + ${shareText} viaje)`,
+      dueLabel: 'Firma del contrato',
+      introText: customOrDefaultIntro,
+      lines: stage1Lines,
+      subtotal: round2(pkgParts[0] + flightParts[0] + totalInsurance),
+    },
+  ];
+
+  for (let idx = 1; idx < count; idx += 1) {
+    const monthsBefore = (count - idx) * 2;
+    const dueDate = subtractMonthsFromSpanishDate(contract.startDateText, monthsBefore);
+    const stageLines: InstallmentLine[] = [
+      {
+        id: `inst-p${idx + 1}-trip`,
+        label:
+          count === 2
+            ? `2º Pago (50% restante: ${summary})`
+            : idx === count - 1
+              ? `${idx + 1}º Pago (1/${count} final del viaje: ${summary})`
+              : `${idx + 1}º Pago (1/${count} del viaje: ${summary})`,
+        amount: pkgParts[idx],
+      },
+      ...(flightParts[idx] > 0
+        ? [
+            {
+              id: `inst-p${idx + 1}-flights`,
+              label: `Vuelos (${idx + 1}/${count} prorrateado)`,
+              amount: flightParts[idx],
+            },
+          ]
+        : []),
+    ];
+
+    stages.push({
+      id: `stage-${idx + 1}`,
+      title:
+        count === 2
+          ? 'Plazo 2 (50% restante)'
+          : `Plazo ${idx + 1} (${monthsBefore} meses antes)`,
+      dueLabel: dueDate
+        ? `${dueDate} (${monthsBefore} meses antes)`
+        : `${monthsBefore} meses antes del inicio`,
+      introText: dueDate
+        ? `El Cliente abonará el ${dueDate} (${monthsBefore} meses antes de la fecha de inicio del viaje) la cantidad de:`
+        : `El Cliente abonará ${monthsBefore} meses antes de la fecha de inicio del viaje la cantidad de:`,
+      lines: stageLines,
+      subtotal: round2(pkgParts[idx] + flightParts[idx]),
+    });
+  }
+
+  return stages;
+}
+
 /**
- * Syncs optional services & insurance summary rows inside conceptLines & installmentLines
+ * Syncs optional services, separate flight pricing & insurance summary rows inside conceptLines & installmentLines
  * while preserving user's base diver/non-diver package amounts.
  */
 export function syncContractFinancialLines(contract: TravelContract): TravelContract {
@@ -359,48 +811,79 @@ export function syncContractFinancialLines(contract: TravelContract): TravelCont
 
   const insuranceBasic = contract.insuranceBasicSelected ? contract.insuranceBasicPrice : 0;
   const insuranceCancel = contract.insuranceCancellationSelected ? contract.insuranceCancellationPrice : 0;
-  const insuranceTotal = insuranceBasic + insuranceCancel;
+  const insuranceTotal = round2(insuranceBasic + insuranceCancel);
 
-  const updatedConcepts = contract.conceptLines.map((line) => {
-    if (line.id === 'extra-optional') {
-      return {
-        ...line,
-        label: selectedOptionalNames
-          ? `Extras opcionales (${selectedOptionalNames})`
-          : 'Extra habitación Individual / Servicios opcionales',
-        amount: Math.round(optionalSelectedTotal * 100) / 100,
-      };
+  const separateFlightPrice = !contract.transportIncluded
+    ? Math.max(0, round2(contract.flightPrice ?? 0))
+    : 0;
+  const flightPaymentMode = normalizeFlightPaymentMode(contract.flightPaymentMode);
+
+  let hasFlightsRow = false;
+  let updatedConcepts = contract.conceptLines
+    .map((line) => {
+      if (line.id === 'extra-optional') {
+        return {
+          ...line,
+          label: selectedOptionalNames
+            ? `Extras opcionales (${selectedOptionalNames})`
+            : 'Extra habitación Individual / Servicios opcionales',
+          amount: round2(optionalSelectedTotal),
+        };
+      }
+      if (line.id === 'insurance') {
+        return {
+          ...line,
+          amount: insuranceTotal,
+        };
+      }
+      if (line.id === 'flights') {
+        hasFlightsRow = true;
+        return {
+          ...line,
+          label: line.label.trim() || 'Vuelos (importe aparte)',
+          amount: separateFlightPrice,
+        };
+      }
+      return line;
+    })
+    .filter((line) => line.id !== 'flights' || separateFlightPrice > 0);
+
+  if (separateFlightPrice > 0 && !hasFlightsRow) {
+    const flightLine: ConceptLine = {
+      id: 'flights',
+      label: 'Vuelos (importe aparte)',
+      amount: separateFlightPrice,
+    };
+    const servicesIdx = updatedConcepts.findIndex((l) => l.id === 'services-extra');
+    if (servicesIdx >= 0) {
+      updatedConcepts = [
+        ...updatedConcepts.slice(0, servicesIdx),
+        flightLine,
+        ...updatedConcepts.slice(servicesIdx),
+      ];
+    } else {
+      updatedConcepts = [...updatedConcepts, flightLine];
     }
-    if (line.id === 'insurance') {
-      return {
-        ...line,
-        amount: Math.round(insuranceTotal * 100) / 100,
-      };
-    }
-    return line;
-  });
+  }
 
   const totalAmount = calculateConceptTotal(updatedConcepts);
-  const packageSubtotal = Math.max(0, Math.round((totalAmount - insuranceTotal) * 100) / 100);
+  const installmentCount = normalizeInstallmentCount(contract.installmentCount);
 
-  const updatedInstallments = contract.installmentLines.map((line) => {
-    if (line.id === 'inst-package') {
-      return { ...line, amount: packageSubtotal };
-    }
-    if (line.id === 'inst-basic-ins') {
-      return { ...line, amount: insuranceBasic };
-    }
-    if (line.id === 'inst-cancel-ins') {
-      return { ...line, amount: insuranceCancel };
-    }
-    return line;
-  });
+  const nextDraft: TravelContract = {
+    ...contract,
+    flightPrice: separateFlightPrice,
+    flightPaymentMode,
+    installmentCount,
+    conceptLines: updatedConcepts,
+    totalAmount,
+  };
+
+  const stages = buildInstallmentSchedule(nextDraft);
+  const updatedInstallments = stages.flatMap((stage) => stage.lines);
 
   return {
-    ...contract,
-    conceptLines: updatedConcepts,
+    ...nextDraft,
     installmentLines: updatedInstallments,
-    totalAmount,
   };
 }
 
@@ -463,6 +946,11 @@ export function createContractFromTemplate(params: {
   const diverAmount = travelerRole === 'diver' ? template.diverPrice : 0;
   const nonDiverAmount = travelerRole === 'non-diver' ? template.nonDiverPrice : 0;
 
+  const templateFlightPrice = !template.transportIncluded
+    ? Math.max(0, round2(template.flightPrice ?? 0))
+    : 0;
+  const flightPaymentMode = normalizeFlightPaymentMode(template.flightPaymentMode);
+
   const initialOptional = template.optionalServices.map((s) => ({ ...s, selected: false }));
   const conceptLines: ConceptLine[] = [
     {
@@ -485,6 +973,15 @@ export function createContractFromTemplate(params: {
       label: 'Seguro (Opcional)',
       amount: 0,
     },
+    ...(templateFlightPrice > 0
+      ? [
+          {
+            id: 'flights',
+            label: 'Vuelos (importe aparte)',
+            amount: templateFlightPrice,
+          },
+        ]
+      : []),
     {
       id: 'services-extra',
       label: 'Servicios (Botella 15L, etc)',
@@ -492,26 +989,7 @@ export function createContractFromTemplate(params: {
     },
   ];
 
-  const basePackage = diverAmount + nonDiverAmount;
-  const installmentLines: InstallmentLine[] = [
-    {
-      id: 'inst-package',
-      label: 'Reserva y Primer pago del Paquete de Viaje',
-      amount: basePackage,
-    },
-    {
-      id: 'inst-basic-ins',
-      label: 'Seguro Básico VIP',
-      amount: 0,
-    },
-    {
-      id: 'inst-cancel-ins',
-      label: 'Cobertura ANULACIÓN Seguro',
-      amount: 0,
-    },
-  ];
-
-  return {
+  const baseDraft: TravelContract = {
     id,
     ownerId,
     contractNumber,
@@ -544,20 +1022,28 @@ export function createContractFromTemplate(params: {
     transportSummary: template.transportSummary,
     transportCheckboxLabel: template.transportCheckboxLabel,
     transportChecked: !template.transportIncluded,
+    flightDetails: template.flightDetails ?? '',
+    flightPrice: templateFlightPrice,
+    flightPaymentMode,
     insuranceBasicSelected: false,
     insuranceBasicLabel: template.insuranceBasicLabel,
     insuranceBasicPrice: template.insuranceBasicPrice,
     insuranceCancellationSelected: false,
     insuranceCancellationLabel: template.insuranceCancellationLabel,
     insuranceCancellationPrice: template.insuranceCancellationPrice,
+    insurancePolicyNumber:
+      extractDefaultPolicyFromLabel(template.insuranceBasicLabel) ||
+      agency.insurancePolicies?.[0]?.policyNumber ||
+      DEFAULT_INSURANCE_POLICIES[0].policyNumber,
+    insuranceCertificateNumber: '',
     declineAssistanceInsurance: true,
     declineCancellationInsurance: true,
     maeDestinationUrl: template.maeDestinationUrl,
     conceptLines,
-    installmentIntro:
-      'Momento de la firma del presente contrato y en concepto de Reserva y Pago inicial más vuelos y seguro si desea el CONTRATANTE PRINCIPAL la cantidad de:',
-    installmentLines,
-    totalAmount: basePackage,
+    installmentCount: 1,
+    installmentIntro: DEFAULT_INSTALLMENT_INTRO,
+    installmentLines: [],
+    totalAmount: diverAmount + nonDiverAmount + templateFlightPrice,
     anexoTransportDetail: template.anexoTransportDetail,
     anexoManagementDetail: template.anexoManagementDetail,
     anexoAccommodationDetail: template.anexoAccommodationDetail,
@@ -566,6 +1052,8 @@ export function createContractFromTemplate(params: {
     generalConditionsDate: template.generalConditionsDate,
     imageAuthorization: 'authorized',
   };
+
+  return syncContractFinancialLines(baseDraft);
 }
 
 export function validateClientInput(client: Pick<Client, 'fullName' | 'dni' | 'locality' | 'email'>): Record<string, string> {
@@ -641,10 +1129,28 @@ export function validateContractInput(
 
 export function formatFirestoreErrorForUser(error: unknown): string {
   let rawMessage = error instanceof Error ? error.message : String(error ?? '');
+  let parsedOperation = '';
+  let parsedCollection = '';
+  let emailVerified: boolean | null | undefined;
+
   try {
-    const parsed = JSON.parse(rawMessage) as { error?: string };
+    const parsed = JSON.parse(rawMessage) as {
+      error?: string;
+      operationType?: string;
+      path?: string | null;
+      authInfo?: { emailVerified?: boolean | null };
+    };
     if (parsed && typeof parsed.error === 'string') {
       rawMessage = parsed.error;
+    }
+    if (parsed && typeof parsed.operationType === 'string') {
+      parsedOperation = parsed.operationType;
+    }
+    if (parsed && typeof parsed.path === 'string' && parsed.path.trim()) {
+      parsedCollection = parsed.path.split('/')[0] ?? '';
+    }
+    if (parsed?.authInfo && 'emailVerified' in parsed.authInfo) {
+      emailVerified = parsed.authInfo.emailVerified;
     }
   } catch {
     // Plain error string
@@ -652,7 +1158,14 @@ export function formatFirestoreErrorForUser(error: unknown): string {
 
   const lower = rawMessage.toLowerCase();
   if (lower.includes('permission-denied') || lower.includes('insufficient permissions')) {
-    return 'No se pudo guardar en la base de datos por permisos o validación de campos. Revisa que tu cuenta de Google tenga correo verificado y que todos los datos obligatorios estén completos.';
+    if (emailVerified === false) {
+      return 'Tu cuenta de Google no tiene el correo verificado en Firebase (emailVerified: false). Verifica el correo de tu cuenta o vuelve a iniciar sesión.';
+    }
+    const detail =
+      parsedOperation && parsedCollection
+        ? ` (operación ${parsedOperation} en ${parsedCollection})`
+        : '';
+    return `No se pudo guardar en la base de datos por permisos o validación de campos${detail}. Revisa que tu cuenta de Google tenga correo verificado y que todos los datos obligatorios estén completos.`;
   }
   if (lower.includes('quota') || lower.includes('resource-exhausted')) {
     return 'Se ha alcanzado el límite diario de operaciones de Firestore. Inténtalo de nuevo más tarde.';
@@ -743,6 +1256,7 @@ export function sanitizeAgencyProfilePayload(profile: AgencyProfile, ownerId: st
     ),
     jurisdictionCity: ensureMinMaxString(normalized.jurisdictionCity, 1, 80, 'Tarragona'),
     publicDomain: clampString(safeDomain, BLUEPRINT_LIMITS.maxStr.publicDomain),
+    insurancePolicies: normalizeInsurancePolicies(normalized.insurancePolicies),
   };
 }
 
@@ -848,6 +1362,11 @@ export function sanitizeTemplatePayload(template: TripTemplate, ownerId: string)
     transportIncluded: Boolean(normalized.transportIncluded),
     transportSummary: ensureMinMaxString(normalized.transportSummary, 1, BLUEPRINT_LIMITS.maxStr.transportSummary, 'Según ficha técnica'),
     transportCheckboxLabel: ensureMinMaxString(normalized.transportCheckboxLabel, 1, BLUEPRINT_LIMITS.maxStr.transportCheckbox, 'El cliente conoce las condiciones de transporte.'),
+    flightDetails: clampString(String(normalized.flightDetails ?? '').trim(), BLUEPRINT_LIMITS.maxStr.flightDetails),
+    flightPrice: normalized.transportIncluded
+      ? 0
+      : clampNumber(normalized.flightPrice ?? 0, 0, 100000),
+    flightPaymentMode: normalizeFlightPaymentMode(normalized.flightPaymentMode),
     insuranceBasicLabel: ensureMinMaxString(normalized.insuranceBasicLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel, 'Seguro Básico de Asistencia en Viaje'),
     insuranceBasicPrice: clampNumber(normalized.insuranceBasicPrice, 0, 10000),
     insuranceCancellationLabel: ensureMinMaxString(normalized.insuranceCancellationLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel, 'Cobertura adicional de anulación'),
@@ -910,19 +1429,27 @@ export function sanitizeContractPayload(contract: TravelContract, ownerId: strin
     transportSummary: ensureMinMaxString(normalized.transportSummary, 1, BLUEPRINT_LIMITS.maxStr.transportSummary, 'Según ficha técnica'),
     transportCheckboxLabel: ensureMinMaxString(normalized.transportCheckboxLabel, 1, BLUEPRINT_LIMITS.maxStr.transportCheckbox, 'El cliente conoce las condiciones de transporte.'),
     transportChecked: Boolean(normalized.transportChecked),
+    flightDetails: clampString(String(normalized.flightDetails ?? '').trim(), BLUEPRINT_LIMITS.maxStr.flightDetails),
+    flightPrice: normalized.transportIncluded
+      ? 0
+      : clampNumber(normalized.flightPrice ?? 0, 0, 100000),
+    flightPaymentMode: normalizeFlightPaymentMode(normalized.flightPaymentMode),
     insuranceBasicSelected: Boolean(normalized.insuranceBasicSelected),
     insuranceBasicLabel: ensureMinMaxString(normalized.insuranceBasicLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceBasicLabel, 'Seguro Básico de Asistencia en Viaje'),
     insuranceBasicPrice: clampNumber(normalized.insuranceBasicPrice, 0, 10000),
     insuranceCancellationSelected: Boolean(normalized.insuranceCancellationSelected),
     insuranceCancellationLabel: ensureMinMaxString(normalized.insuranceCancellationLabel, 1, BLUEPRINT_LIMITS.maxStr.insuranceCancellationLabel, 'Cobertura adicional de anulación'),
     insuranceCancellationPrice: clampNumber(normalized.insuranceCancellationPrice, 0, 10000),
+    insurancePolicyNumber: clampString(String(normalized.insurancePolicyNumber ?? '').trim(), 80),
+    insuranceCertificateNumber: clampString(String(normalized.insuranceCertificateNumber ?? '').trim(), 80),
     declineAssistanceInsurance: Boolean(normalized.declineAssistanceInsurance),
     declineCancellationInsurance: Boolean(normalized.declineCancellationInsurance),
     maeDestinationUrl: ensureMinMaxString(normalized.maeDestinationUrl, 1, BLUEPRINT_LIMITS.maxStr.maeUrl, 'https://www.exteriores.gob.es'),
     conceptLines,
-    installmentIntro: ensureMinMaxString(normalized.installmentIntro, 1, BLUEPRINT_LIMITS.maxStr.installmentIntro, 'Reserva y pago inicial según contrato.'),
+    installmentCount: normalizeInstallmentCount(normalized.installmentCount),
+    installmentIntro: ensureMinMaxString(normalized.installmentIntro, 1, BLUEPRINT_LIMITS.maxStr.installmentIntro, DEFAULT_INSTALLMENT_INTRO),
     installmentLines,
-    totalAmount: calculateConceptTotal(conceptLines),
+    totalAmount: clampNumber(calculateConceptTotal(conceptLines), 0, 1000000),
     anexoTransportDetail: ensureMinMaxString(normalized.anexoTransportDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoTransport, 'Según programa'),
     anexoManagementDetail: ensureMinMaxString(normalized.anexoManagementDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoManagement, 'Gestión de pagos.'),
     anexoAccommodationDetail: ensureMinMaxString(normalized.anexoAccommodationDetail, 1, BLUEPRINT_LIMITS.maxStr.anexoAccommodation, 'Según programa'),
@@ -930,5 +1457,184 @@ export function sanitizeContractPayload(contract: TravelContract, ownerId: strin
     anexoHealthContacts: sanitizeStringArray(normalized.anexoHealthContacts, BLUEPRINT_LIMITS.maxArrayHealth, 250),
     generalConditionsDate: ensureMinMaxString(normalized.generalConditionsDate, 2, BLUEPRINT_LIMITS.maxStr.dateText, '14 de septiembre de 2026'),
     imageAuthorization: normalized.imageAuthorization === 'declined' ? 'declined' : 'authorized',
+    clientSignatureDataUrl: clampString(
+      String(normalized.clientSignatureDataUrl ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.signatureDataUrl
+    ),
+    clientSignerName: clampString(
+      String(normalized.clientSignerName ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.signerName
+    ),
+    clientSignedAt: clampString(
+      String(normalized.clientSignedAt ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.signedAt
+    ),
+    signatureRequestId: clampString(
+      String(normalized.signatureRequestId ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.signatureRequestId
+    ),
+    agencyCopySentAt: clampString(
+      String(normalized.agencyCopySentAt ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.signedAt
+    ),
+    agencyCopyEmail: clampString(
+      String(normalized.agencyCopyEmail ?? '').trim(),
+      BLUEPRINT_LIMITS.maxStr.email
+    ),
   };
 }
+
+function randomToken(length = 24): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const out: string[] = [];
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint8Array(length);
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < length; i += 1) {
+      out.push(alphabet[buf[i] % alphabet.length]);
+    }
+    return out.join('');
+  }
+  for (let i = 0; i < length; i += 1) {
+    out.push(alphabet[Math.floor(Math.random() * alphabet.length)]);
+  }
+  return out.join('');
+}
+
+export function generateSignatureRequestIds(): { requestId: string; accessToken: string } {
+  return {
+    requestId: `sig_${randomToken(22)}`,
+    accessToken: randomToken(28),
+  };
+}
+
+export function extractPublicAgencyData(agency: AgencyProfile) {
+  const normalized = normalizeAgencyProfile(agency);
+  return {
+    commercialName: normalized.commercialName,
+    legalHolderName: normalized.legalHolderName,
+    cif: normalized.cif,
+    licenseNote: normalized.licenseNote,
+    addressLine1: normalized.addressLine1,
+    addressLine2: normalized.addressLine2,
+    phone: normalized.phone,
+    email: normalized.email,
+    iban: normalized.iban,
+    bic: normalized.bic,
+    bankBeneficiary: normalized.bankBeneficiary,
+    footerText: normalized.footerText,
+    jurisdictionCity: normalized.jurisdictionCity,
+  };
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlToBytes(b64u: string): Uint8Array {
+  const b64 = b64u.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+  const binary = atob(b64 + pad);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export async function encodeSigningEnvelope(params: {
+  contract: TravelContract;
+  agency: AgencyProfile;
+}): Promise<string> {
+  const slimContract = {
+    ...normalizeContract(params.contract),
+    clientSignatureDataUrl: undefined,
+  };
+  const payloadJson = JSON.stringify({
+    c: slimContract,
+    a: extractPublicAgencyData(params.agency),
+  });
+  const rawBytes = new TextEncoder().encode(payloadJson);
+
+  if (typeof CompressionStream !== 'undefined') {
+    try {
+      const stream = new Blob([rawBytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+      const compressedBuffer = await new Response(stream).arrayBuffer();
+      return `z.${bytesToBase64Url(new Uint8Array(compressedBuffer))}`;
+    } catch {
+      // Fall back to uncompressed UTF-8 base64url
+    }
+  }
+  return `u.${bytesToBase64Url(rawBytes)}`;
+}
+
+export async function decodeSigningEnvelope(
+  encoded: string
+): Promise<{ contract: TravelContract; agency: AgencyProfile } | null> {
+  const clean = String(encoded ?? '').trim();
+  if (!clean) return null;
+  try {
+    let jsonText = '';
+    if (clean.startsWith('z.') && typeof DecompressionStream !== 'undefined') {
+      const compressed = base64UrlToBytes(clean.slice(2));
+      const arrayBuf = compressed.buffer.slice(
+        compressed.byteOffset,
+        compressed.byteOffset + compressed.byteLength
+      ) as ArrayBuffer;
+      const stream = new Blob([arrayBuf]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      jsonText = await new Response(stream).text();
+    } else if (clean.startsWith('u.')) {
+      jsonText = new TextDecoder().decode(base64UrlToBytes(clean.slice(2)));
+    } else {
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonText) as {
+      c?: Partial<TravelContract>;
+      a?: Partial<AgencyProfile>;
+    };
+    if (!parsed || !parsed.c) return null;
+    return {
+      contract: normalizeContract(parsed.c),
+      agency: normalizeAgencyProfile(parsed.a),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function buildClientSignatureUrl(params: {
+  baseOrigin: string;
+  basePath?: string;
+  requestId: string;
+  envelope?: string;
+}): string {
+  const origin = params.baseOrigin.replace(/\/+$/, '');
+  const path = params.basePath && params.basePath.startsWith('/') ? params.basePath : '/';
+  const search = new URLSearchParams();
+  search.set('sign', params.requestId);
+  if (params.envelope) {
+    search.set('d', params.envelope);
+  }
+  return `${origin}${path}?${search.toString()}`;
+}
+
+export function parseClientSignatureParams(search: string): {
+  requestId: string;
+  envelope: string;
+} | null {
+  try {
+    const params = new URLSearchParams(search);
+    const requestId = (params.get('sign') ?? '').trim();
+    const envelope = (params.get('d') ?? '').trim();
+    if (!requestId && !envelope) return null;
+    return { requestId, envelope };
+  } catch {
+    return null;
+  }
+}
+

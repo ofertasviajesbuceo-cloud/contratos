@@ -1,86 +1,80 @@
-import React from 'react';
+import React, { useId } from 'react';
 import type { AgencyProfile } from '../types/contract';
 
-export function DiverTriangleLogo({ className = 'w-20 h-16' }: { className?: string }) {
+export const AGENCY_LOGO_SRC = './assets/aistudio/LOGO_OVB_80x80_89ca52e9.png';
+
+export function DiverTriangleLogo({ className = 'w-16 h-16' }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 120 96"
-      className={className}
-      aria-label="Logotipo Viajes Mar de Hielo"
-      role="img"
-    >
-      <polygon
-        points="60,4 116,90 4,90"
-        fill="#facc15"
-        stroke="#0f172a"
-        strokeWidth="3.5"
-        strokeLinejoin="round"
-      />
-      {/* Stylized scuba diver silhouette */}
-      <g fill="#0f172a">
-        <path d="M36 53 c6 -4 14 -6 24 -4 l13 4 l4 -2 l3 4 l-6 4 l-15 -3 l-10 4 l-9 -3 z" />
-        <circle cx="77" cy="48" r="4.2" />
-        <rect x="48" y="42" width="16" height="5" rx="2.5" transform="rotate(8 56 44)" />
-        <path d="M29 56 l10 -4 l-2 6 l-10 3 z" />
-      </g>
-      <text
-        x="60"
-        y="83"
-        textAnchor="middle"
-        fontSize="8.8"
-        fontWeight="700"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fill="#0f172a"
-        letterSpacing="0.2"
-      >
-        VIAJES mArDEhIELO
-      </text>
-    </svg>
+    <img
+      src={AGENCY_LOGO_SRC}
+      alt="Logotipo Viajes Mar de Hielo"
+      draggable={false}
+      className={`object-contain select-none ${className}`}
+    />
   );
 }
 
-export function AgencyStampMark({ className = 'w-32 h-24' }: { className?: string }) {
+export function AgencyStampMark({ className = 'w-[24mm] h-[22mm]' }: { className?: string }) {
+  const uid = useId().replace(/:/g, '');
+  const filterId = `mdh-blue-stamp-${uid}`;
+
   return (
     <svg
-      viewBox="0 0 170 120"
-      className={className}
-      aria-label="Sello Agencia Viajes Mar de Hielo"
+      viewBox="0 0 120 120"
+      className={`select-none -rotate-3 ${className}`}
       role="img"
+      aria-label="Sello Agencia Viajes Mar de Hielo"
     >
-      <polygon
-        points="85,8 152,108 18,108"
-        fill="none"
-        stroke="#1e3a8a"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
+      <defs>
+        <filter id={filterId} x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+          {/* Extract dark strokes/silhouettes (border, plane, diver, boat, text) and drop yellow fill */}
+          <feColorMatrix
+            type="matrix"
+            in="SourceGraphic"
+            result="rawMask"
+            values="
+              0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0 0
+              -0.40 -0.90 -0.15 1.00 0
+            "
+          />
+          <feComponentTransfer in="rawMask" result="crispMask">
+            <feFuncA type="linear" slope="1.40" intercept="-0.02" />
+          </feComponentTransfer>
+          {/* Subtle rubber-stamp ink grain without hurting thin lines */}
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.55"
+            numOctaves="2"
+            seed="7"
+            result="grain"
+          />
+          <feColorMatrix
+            type="matrix"
+            in="grain"
+            result="grainAlpha"
+            values="
+              0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0.16 0.86
+            "
+          />
+          <feComposite in="crispMask" in2="grainAlpha" operator="in" result="stampedMask" />
+          <feFlood floodColor="#1d4ed8" floodOpacity="0.92" result="stampInk" />
+          <feComposite in="stampInk" in2="stampedMask" operator="in" />
+        </filter>
+      </defs>
+      <image
+        href={AGENCY_LOGO_SRC}
+        x="4"
+        y="4"
+        width="112"
+        height="112"
+        preserveAspectRatio="xMidYMid meet"
+        filter={`url(#${filterId})`}
       />
-      <g fill="#1e3a8a" opacity="0.88">
-        <path d="M56 61 c7 -4 16 -5 27 -3 l14 4 l5 -2 l3 4 l-7 4 l-16 -3 l-12 4 l-10 -3 z" />
-        <circle cx="101" cy="56" r="4.5" />
-        <rect x="70" y="50" width="17" height="5" rx="2.5" transform="rotate(8 78 52)" />
-      </g>
-      <text
-        x="85"
-        y="84"
-        textAnchor="middle"
-        fontSize="14"
-        fontWeight="800"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fill="#0f172a"
-      >
-        AGENCIA
-      </text>
-      <text
-        x="85"
-        y="102"
-        textAnchor="middle"
-        fontSize="9.5"
-        fontWeight="700"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fill="#1e3a8a"
-      >
-        VIAJES mArDEhIELO
-      </text>
     </svg>
   );
 }
@@ -120,8 +114,8 @@ export function DocumentWaveHeader({ agency }: { agency: AgencyProfile }) {
           <p>{agency.phone}</p>
           <p className="underline">{agency.email}</p>
         </div>
-        <div className="pt-[1mm]">
-          <DiverTriangleLogo className="w-[24mm] h-[19mm]" />
+        <div className="pt-[0.5mm]">
+          <DiverTriangleLogo className="w-[22mm] h-[22mm]" />
         </div>
       </div>
     </div>

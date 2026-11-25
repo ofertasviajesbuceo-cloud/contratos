@@ -44,8 +44,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 pt-7 pb-5 border-b border-slate-100 flex flex-col items-center text-center">
-          <div className="w-12 h-11 flex items-center justify-center mb-3">
-            <DiverTriangleLogo className="w-12 h-10" />
+          <div className="w-16 h-16 flex items-center justify-center mb-3">
+            <DiverTriangleLogo className="w-16 h-16" />
           </div>
           <h1 className="text-lg font-bold tracking-tight text-slate-900">
             {agencyName}
